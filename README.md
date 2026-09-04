@@ -1,3 +1,23 @@
+> ## ⚠️ 本项目为二次开发版本（Fork in spirit, not by button）
+>
+> 本仓库基于 [**PiliPlus**](https://github.com/bggRGjQaUbCoE/PiliPlus) 二次开发，原作者 [@bggRGjQaUbCoE](https://github.com/bggRGjQaUbCoE)，
+> 原项目以 **GPL-3.0** 协议发布，本仓库同样遵循 **GPL-3.0**（完整条款见 [LICENSE](./LICENSE)）。
+>
+> 原项目的全部功劳归原作者所有；本仓库仅在其之上新增功能，**未移除任何原作者署名与版权声明**。
+>
+> ### 本仓库新增内容
+>
+> - **TimeSearch（时间轴搜索）** — 🚧 规划中
+>
+> ### 同步上游
+>
+> ```bash
+> git fetch upstream
+> git merge upstream/main
+> ```
+>
+> 上游仓库已配置为 `upstream`，可随时跟进原项目的修复与新特性。
+
 <div align="center">
     <img width="200" height="200" src="assets/images/logo/logo.png">
 </div>

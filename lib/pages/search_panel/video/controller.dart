@@ -1,3 +1,4 @@
+// Modified by Neutrino-va (2026-09-04): 新增「按年份」快速搜索筛选
 import 'dart:math';
 
 import 'package:PiliPlus/http/loading_state.dart';
@@ -219,6 +220,53 @@ class SearchVideoController
                       );
                     },
                   ).toList(),
+                ),
+                // 按年份快速搜索：一键筛选该年 1/1 ~ 12/31 的投稿
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (int year = DateTime.now().year; year >= 2009; year--)
+                      SearchText(
+                        text: '$year',
+                        onTap: (_) {
+                          pubTimeType = null;
+                          customPubBeginDate = true;
+                          customPubEndDate = true;
+                          pubBeginDate = DateTime(year);
+                          pubEndDate = DateTime(year, 12, 31);
+                          pubBegin =
+                              DateTime(year, 1, 1).millisecondsSinceEpoch ~/
+                              1000;
+                          pubEnd =
+                              DateTime(year, 12, 31, 23, 59, 59)
+                                  .millisecondsSinceEpoch ~/
+                              1000;
+                          onSortSearch(label: '$year 年');
+                        },
+                        bgColor:
+                            pubTimeType == null &&
+                                pubBeginDate.year == year &&
+                                pubBeginDate.month == 1 &&
+                                pubBeginDate.day == 1 &&
+                                pubEndDate.year == year &&
+                                pubEndDate.month == 12 &&
+                                pubEndDate.day == 31
+                            ? theme.colorScheme.secondaryContainer
+                            : null,
+                        textColor:
+                            pubTimeType == null &&
+                                pubBeginDate.year == year &&
+                                pubBeginDate.month == 1 &&
+                                pubBeginDate.day == 1 &&
+                                pubEndDate.year == year &&
+                                pubEndDate.month == 12 &&
+                                pubEndDate.day == 31
+                            ? theme.colorScheme.onSecondaryContainer
+                            : null,
+                      ),
+                  ],
                 ),
                 const SizedBox(height: 8),
                 Row(
