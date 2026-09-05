@@ -68,6 +68,7 @@ import 'package:PiliPlus/pages/video/view.dart';
 import 'package:PiliPlus/pages/webview/view.dart';
 import 'package:PiliPlus/pages/whisper/view.dart';
 import 'package:PiliPlus/pages/whisper_detail/view.dart';
+import 'package:PiliPlus/pages/year_roaming/view.dart';
 import 'package:get/get.dart';
 
 class Routes {
@@ -124,6 +125,8 @@ class Routes {
     GetPage(name: '/historySearch', page: () => const HistorySearchPage()),
     GetPage(name: '/laterSearch', page: () => const LaterSearchPage()),
     GetPage(name: '/followSearch', page: () => const FollowSearchPage()),
+    // 年份漫游 / 年度回顾
+    GetPage(name: '/yearRoaming', page: () => const YearRoamingPage()),
     // 消息页面
     GetPage(name: '/whisper', page: () => const WhisperPage()),
     // 私信详情

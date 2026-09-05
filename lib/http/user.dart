@@ -86,6 +86,7 @@ abstract final class UserHttp {
     required String type,
     int? max,
     int? viewAt,
+    String? business,
     Account? account,
   }) async {
     final res = await Request().get(
@@ -95,6 +96,7 @@ abstract final class UserHttp {
         'ps': 20,
         'max': max ?? 0,
         'view_at': viewAt ?? 0,
+        'business': ?business,
       },
       options: Options(extra: {'account': account ?? Accounts.history}),
     );

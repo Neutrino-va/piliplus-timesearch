@@ -99,6 +99,12 @@ class _HomePageState extends CommonPageState<HomePage>
       children: [
         searchBar(),
         const SizedBox(width: 4),
+        IconButton(
+          tooltip: '年度回顾',
+          onPressed: () => Get.toNamed('/yearRoaming'),
+          icon: const Icon(Icons.auto_awesome_outlined),
+        ),
+        const SizedBox(width: 2),
         msgBadge(_mainController),
         const SizedBox(width: 8),
         userAvatar(colorScheme: _colorScheme, mainController: _mainController),

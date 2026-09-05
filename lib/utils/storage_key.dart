@@ -234,6 +234,7 @@ abstract final class SettingBoxKey {
       msgBadgeMode = 'msgBadgeMode',
       msgUnReadTypeV2 = 'msgUnReadTypeV2',
       navBarSort = 'navBarSort',
+      navBarSortMigrationV1 = 'navBarSortMigrationV1',
       tempPlayerConf = 'tempPlayerConf',
       reduceLuxColor = 'reduceLuxColor',
       liveCdnUrl = 'liveCdnUrl',

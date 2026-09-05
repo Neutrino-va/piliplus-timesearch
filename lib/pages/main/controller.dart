@@ -223,16 +223,46 @@ class MainController extends GetxController
   }
 
   void setNavBarConfig() {
-    List<int>? navBarSort =
-        (GStorage.setting.get(SettingBoxKey.navBarSort) as List?)?.fromCast();
+    final savedIndices = (GStorage.setting.get(
+      SettingBoxKey.navBarSort,
+    ) as List?)?.fromCast<int>();
+    const allBars = NavigationBarType.values;
     late final List<NavigationBarType> navigationBars;
-    if (navBarSort == null || navBarSort.isEmpty) {
-      navigationBars = NavigationBarType.values;
+
+    if (savedIndices == null || savedIndices.isEmpty) {
+      navigationBars = allBars;
     } else {
-      navigationBars = navBarSort
-          .map((i) => NavigationBarType.values[i])
-          .toList();
+      final indices = <int>[];
+      for (final index in savedIndices) {
+        if (index >= 0 && index < allBars.length && !indices.contains(index)) {
+          indices.add(index);
+        }
+      }
+
+      if (indices.isEmpty) {
+        navigationBars = allBars;
+      } else {
+        final migrationDone =
+            GStorage.setting.get(
+              SettingBoxKey.navBarSortMigrationV1,
+              defaultValue: false,
+            ) ==
+            true;
+        if (!migrationDone) {
+          final yearRoamingIndex = NavigationBarType.yearRoaming.index;
+          if (!indices.contains(yearRoamingIndex)) {
+            indices.add(yearRoamingIndex);
+            GStorage.setting.put(SettingBoxKey.navBarSort, indices);
+          }
+          GStorage.setting.put(
+            SettingBoxKey.navBarSortMigrationV1,
+            true,
+          );
+        }
+        navigationBars = indices.map((index) => allBars[index]).toList();
+      }
     }
+
     this.navigationBars = navigationBars;
     final defPage = Pref.defaultHomePage;
     selectedIndex.value = math.max(0, navigationBars.indexOf(defPage));

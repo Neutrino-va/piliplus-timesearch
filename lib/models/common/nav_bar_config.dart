@@ -3,6 +3,7 @@ import 'package:PiliPlus/models/common/enum_with_label.dart';
 import 'package:PiliPlus/pages/dynamics/view.dart';
 import 'package:PiliPlus/pages/home/view.dart';
 import 'package:PiliPlus/pages/mine/view.dart';
+import 'package:PiliPlus/pages/year_roaming/view.dart';
 import 'package:material_ui/material_ui.dart';
 
 enum NavigationBarType implements EnumWithLabel {
@@ -23,6 +24,12 @@ enum NavigationBarType implements EnumWithLabel {
     Icon(Icons.person_outline),
     Icon(Icons.person),
     MinePage(),
+  ),
+  yearRoaming(
+    '年度回顾',
+    Icon(Icons.auto_awesome_outlined),
+    Icon(Icons.auto_awesome),
+    YearRoamingPage(),
   ),
   ;
 

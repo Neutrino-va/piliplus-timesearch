@@ -490,6 +490,13 @@ class _MainAppState extends PopScopeState<MainApp>
         children: _mainController.navigationBars.map((i) => i.page).toList(),
       );
     }
+    // 外层 Padding 已加过状态栏高度；此处消费掉顶部 MediaQuery padding，
+    // 避免 tab 内 AppBar(primary:true) 的 SafeArea 再叠加一次。
+    child = MediaQuery.removePadding(
+      context: context,
+      removeTop: true,
+      child: child,
+    );
 
     Widget? sideBar;
     Widget? bottomNav;

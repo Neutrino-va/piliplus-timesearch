@@ -30,6 +30,7 @@ class HistoryController
 
   int? max;
   int? viewAt;
+  String? business;
 
   @override
   RxInt get rxCount => baseCtr.checkedCount;
@@ -48,6 +49,7 @@ class HistoryController
   Future<void> onRefresh() {
     max = null;
     viewAt = null;
+    business = null;
     return super.onRefresh();
   }
 
@@ -60,8 +62,21 @@ class HistoryController
   bool customHandleResponse(bool isRefresh, Success<HistoryData> response) {
     HistoryData data = response.response;
     isEnd = data.list.isNullOrEmpty;
-    max = data.list?.lastOrNull?.history.oid;
-    viewAt = data.list?.lastOrNull?.viewAt;
+    // 下一页游标只能整体来自服务端返回的 cursor；
+    // 禁止用列表末项的 oid/viewAt/business 拼造游标（字段级混合会生成
+    // 服务端从未下发过的游标组合，导致 400 / 服务器异常）。
+    final cursor = data.cursor;
+    if (cursor?.max != null && cursor?.viewAt != null) {
+      max = cursor!.max;
+      viewAt = cursor.viewAt;
+      business = cursor.business;
+    } else {
+      // 游标缺失或不完整：停止翻页，而不是伪造游标继续请求
+      max = null;
+      viewAt = null;
+      business = null;
+      isEnd = true;
+    }
 
     if (isRefresh && type == null) {
       if (tabs.isEmpty && data.tab?.isNotEmpty == true) {
@@ -137,6 +152,7 @@ class HistoryController
     type: type ?? 'all',
     max: max,
     viewAt: viewAt,
+    business: business,
     account: account,
   );
 
