@@ -1,5 +1,5 @@
 abstract final class Constants {
-  static const appName = 'PiliPlus';
+  static const appName = 'PiliPlus考古版';
   static const sourceCodeUrl = 'https://github.com/Neutrino-va/piliplus-timesearch';
 
   // 27eb53fc9058f8c3  移动端 Android
