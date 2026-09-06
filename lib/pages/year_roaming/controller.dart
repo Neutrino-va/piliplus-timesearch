@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:PiliPlus/http/loading_state.dart';
@@ -9,6 +10,7 @@ import 'package:PiliPlus/utils/accounts.dart';
 import 'package:PiliPlus/utils/accounts/account.dart';
 import 'package:PiliPlus/utils/date_utils.dart';
 import 'package:PiliPlus/utils/duration_utils.dart';
+import 'package:PiliPlus/utils/storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:get/get.dart';
 import 'package:path_provider/path_provider.dart';
@@ -185,6 +187,38 @@ class YearRoamingController
     String? business;
     String? lastCursor;
 
+    // ===== 本地归档:先呈现已有数据,网络只做增量补全 =====
+    // B站历史仅保留约一年,本地归档让数据可越过保留期长期积累;
+    // 命中归档时立即呈现,避免白屏等待,也大幅减少重复请求。
+    final archived = <HistoryItemModel>[];
+    final archivedKeys = <String>{};
+    for (final key in GStorage.yearArchive.keys) {
+      final raw = GStorage.yearArchive.get(key);
+      if (raw == null) continue;
+      try {
+        final item = HistoryItemModel.fromJson(
+          jsonDecode(raw) as Map<String, dynamic>,
+        );
+        final itemViewAt = item.viewAt;
+        if (itemViewAt == null ||
+            itemViewAt < startTimestamp ||
+            itemViewAt > endTimestamp) {
+          continue;
+        }
+        archived.add(item);
+        archivedKeys.add(key);
+      } catch (_) {
+        // 单条归档损坏不影响其余数据
+      }
+    }
+    archived.sort((a, b) => (b.viewAt ?? 0).compareTo(a.viewAt ?? 0));
+    if (archived.isNotEmpty) {
+      loadingState.value = Success(archived);
+    }
+    records.addAll(archived);
+    recordKeys.addAll(archivedKeys);
+    await _logLine('本地归档命中${archived.length}条(区间内)');
+
     // 锚定分页：查询今天之前就结束的区间时，首请求直接把 view_at 锚定在
     // 区间末端，避免把请求额度浪费在区间之后（更晚）的数据上；
     // 包含今天的区间（如当前年份）仍从最新开始。
@@ -258,6 +292,24 @@ class YearRoamingController
           }
         }
 
+        // 全量归档(含区间外记录,供其他区间/未来回看);整页皆已归档
+        // 说明该区域此前已完整抓取过,提前收敛停止翻页。
+        final archiveMap = <String, String>{};
+        var allArchived = list.isNotEmpty;
+        for (final item in list) {
+          final key = _archiveKey(item);
+          if (!archivedKeys.contains(key)) allArchived = false;
+          archiveMap[key] = jsonEncode(item.toJson());
+        }
+        if (archiveMap.isNotEmpty) {
+          await GStorage.yearArchive.putAll(archiveMap);
+          archivedKeys.addAll(archiveMap.keys);
+        }
+        if (allArchived) {
+          _logLine('整页均已归档,提前收敛');
+          break;
+        }
+
         for (final item in list) {
           final itemViewAt = item.viewAt;
           if (itemViewAt == null ||
@@ -265,7 +317,7 @@ class YearRoamingController
               itemViewAt > endTimestamp) {
             continue;
           }
-          final key = _recordKey(item);
+          final key = _archiveKey(item);
           if (recordKeys.add(key)) {
             records.add(item);
           }
@@ -298,7 +350,12 @@ class YearRoamingController
         }
       } else if (res case Error(:final errMsg, :final code)) {
         _logLine('接口返回错误: code=$code message=$errMsg');
-        return Error(errMsg, code: code);
+        final rateLimited = code == 412 || code == 429 || code == -352 ||
+            code == -1200;
+        return Error(
+          rateLimited ? '被B站限流了，请几分钟后再重试（code $code）' : errMsg,
+          code: code,
+        );
       } else {
         _logLine('接口返回未知状态: $res');
         return const Error(null);
@@ -421,11 +478,17 @@ class YearRoamingController
 
   int _toTimestamp(DateTime date) => date.millisecondsSinceEpoch ~/ 1000;
 
-  String _recordKey(HistoryItemModel item) {
+  /// 归档唯一键:优先使用B站自身的 kid;缺失时用业务字段推导。
+  String _archiveKey(HistoryItemModel item) {
+    final kid = item.kid;
+    if (kid != null) return 'kid_$kid';
     final history = item.history;
-    return '${history.business}:${history.oid}:${history.epid}:'
-        '${history.cid}:${item.viewAt}';
+    return 'k_${history.business}_${history.oid}_${history.epid}:'
+        '${history.cid}_${item.viewAt}';
   }
+
+  /// 本地归档总条数(展示用)。
+  int get archiveCount => GStorage.yearArchive.length;
 
   int _watchedSeconds(HistoryItemModel item) {
     if (item.progress == -1) return item.duration ?? 0;

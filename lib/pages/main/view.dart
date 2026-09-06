@@ -431,7 +431,7 @@ class _MainAppState extends PopScopeState<MainApp>
                   children: _mainController.navigationBars
                       .map(
                         (e) => NavigationDrawerDestination(
-                          label: Text(e.label),
+                          label: FittedBox(fit: BoxFit.scaleDown, child: Text(e.label)),
                           icon: _buildIcon(type: e),
                           selectedIcon: _buildIcon(
                             type: e,
@@ -457,7 +457,7 @@ class _MainAppState extends PopScopeState<MainApp>
           destinations: _mainController.navigationBars
               .map(
                 (e) => NavigationRailDestination(
-                  label: Text(e.label),
+                  label: FittedBox(fit: BoxFit.scaleDown, child: Text(e.label)),
                   icon: _buildIcon(type: e),
                   selectedIcon: _buildIcon(type: e, selected: true),
                 ),

@@ -245,8 +245,10 @@ class _YearRoamingPageState extends State<YearRoamingPage>
           ),
           const SizedBox(height: 4),
           Text(
-            '数据来源：B站观看历史，仅保留最近一年，更早时段无法查询。'
-            '统计口径：按该范围内的观看记录计算；“最喜欢”指范围内看过且当前仍在收藏夹中的内容。',
+            '数据来源：B站观看历史（仅保留约一年）+ 本地归档（共 '
+            '${_controller.archiveCount} 条，会随使用持续积累）。'
+            '统计口径：按该范围内的观看记录计算；“最喜欢”指范围内看过且当前仍在收藏夹中的内容；'
+            '“观看时长”按观看进度估算。',
             style: TextStyle(
               fontSize: 12,
               color: theme.colorScheme.outline,
