@@ -24,6 +24,8 @@ class YearRecallFeedController
   /// 期数列表是否已就绪（决定年份芯片能否渲染）。
   final RxBool listReady = false.obs;
 
+  bool _seriesListLoading = false;
+
   /// 每周必看覆盖不到的年份（如2009-2018）没有可聚合的期数。
   List<int> get availableYears {
     final years = <int>{};
@@ -42,12 +44,16 @@ class YearRecallFeedController
       _yearEditions != null && _yearEditions!.isNotEmpty;
 
   Future<void> ensureSeriesList() async {
-    if (seriesList != null) return;
+    if (seriesList != null || _seriesListLoading) return;
+    _seriesListLoading = true;
     final res = await VideoHttp.popularSeriesList();
+    _seriesListLoading = false;
     if (res case Success(:final response)) {
       seriesList = response;
       listReady.value = true;
       _prepareYearEditions();
+      // 期数就绪后拉取第一周，否则页面会停留在加载态。
+      queryData();
     } else if (res case Error(:final errMsg)) {
       loadingState.value = Error(errMsg);
       listReady.value = true;
