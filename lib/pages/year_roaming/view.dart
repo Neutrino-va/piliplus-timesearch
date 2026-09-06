@@ -16,6 +16,7 @@ import 'package:PiliPlus/pages/year_recall/controller.dart';
 import 'package:PiliPlus/pages/year_recall/feed_controller.dart';
 import 'package:PiliPlus/pages/year_recall/view.dart';
 import 'package:PiliPlus/pages/year_roaming/controller.dart';
+import 'package:PiliPlus/pages/year_roaming/my_likes_rank.dart';
 import 'package:PiliPlus/utils/date_utils.dart';
 import 'package:PiliPlus/utils/duration_utils.dart';
 import 'package:PiliPlus/utils/extension/get_ext.dart';
@@ -441,6 +442,8 @@ class _YearRoamingPageState extends State<YearRoamingPage>
           ],
           const SizedBox(height: 12),
           _buildZoneStats(theme, records.length),
+          const SizedBox(height: 12),
+          const MyLikesRankCard(),
           const SizedBox(height: 12),
           Text(
             '这一年的观看内容',

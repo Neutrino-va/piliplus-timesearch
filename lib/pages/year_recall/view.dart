@@ -112,6 +112,7 @@ abstract final class YearRecallView {
     ThemeData theme,
     YearRecallFeedController controller,
   ) {
+    final preWeekly = controller.selectedYear.value < controller.weeklyStartYear;
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
       child: Column(
@@ -127,7 +128,8 @@ abstract final class YearRecallView {
               ),
               const Spacer(),
               Text(
-                '${controller.selectedYear.value} 年每周必看',
+                '${controller.selectedYear.value} 年'
+                '${preWeekly ? ' · 入站必刷经典' : ' · 每周必看'}',
                 style: TextStyle(color: theme.colorScheme.primary),
               ),
             ],
@@ -150,8 +152,11 @@ abstract final class YearRecallView {
           ),
           const SizedBox(height: 4),
           Text(
-            '内容为 B 站官方「每周必看」合集，按周回看当年全站热门；'
-            '更早年份或指定分区的精确筛选请切换到「关键词筛选」。',
+            preWeekly
+                ? '该年份早于「每周必看」上线（${controller.weeklyStartYear} 年），'
+                    '以下为 B 站官方入站必刷经典库中该年份的传世作品。'
+                : '内容为 B 站官方「每周必看」合集，按周回看当年全站热门；'
+                    '更早年份自动切换为入站必刷经典库。指定分区请用下方筛选。',
             style: TextStyle(fontSize: 11, color: theme.colorScheme.outline),
           ),
         ],
@@ -189,7 +194,7 @@ abstract final class YearRecallView {
                         ),
                         const SizedBox(height: 12),
                         Text(
-                          '${controller.selectedYear.value} 年没有可回看的每周必看期数',
+                          '${controller.selectedYear.value} 年没有可回看的内容',
                           style: theme.textTheme.titleMedium,
                           textAlign: TextAlign.center,
                         ),
@@ -198,25 +203,94 @@ abstract final class YearRecallView {
                   ),
                 ),
               ]
-            : [
-                SliverPadding(
-                  padding: const EdgeInsets.only(top: 8),
-                  sliver: SliverGrid.builder(
-                    gridDelegate: _gridDelegate,
-                    itemBuilder: (context, index) {
-                      if (index == response.length - 1) {
-                        controller.onLoadMore();
-                      }
-                      return VideoCardH(videoItem: response[index]);
-                    },
-                    itemCount: response.length,
-                  ),
-                ),
-              ],
+            : _buildFeedGrid(theme, controller, response),
       Error(:final errMsg) => [
         HttpError(errMsg: errMsg, onReload: controller.onReload),
       ],
     };
+  }
+
+  /// 分区筛选(本地过滤已加载与后续加载的内容) + 结果网格。
+  static List<Widget> _buildFeedGrid(
+    ThemeData theme,
+    YearRecallFeedController controller,
+    List<HotVideoItemModel> response,
+  ) {
+    final zone = controller.selectedTname.value;
+    final visible = zone.isEmpty
+        ? response
+        : response.where((video) => video.tname == zone).toList();
+    final tnames = controller.availableTnames(response);
+
+    return [
+      SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              spacing: 8,
+              children: [
+                Text('分区', style: TextStyle(color: theme.colorScheme.outline)),
+                _chip(
+                  theme: theme,
+                  text: '全部',
+                  selected: zone.isEmpty,
+                  onTap: () => controller.setTname(''),
+                ),
+                for (final tname in tnames)
+                  _chip(
+                    theme: theme,
+                    text: tname,
+                    selected: zone == tname,
+                    onTap: () => controller.setTname(tname),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+      if (visible.isEmpty)
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 32, 24, 48),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.filter_alt_off_outlined,
+                  size: 44,
+                  color: theme.colorScheme.outline,
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  '已加载的内容中没有「$zone」分区的视频，'
+                  '下滑加载更多周数后会出现。',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: theme.colorScheme.outline,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        )
+      else
+        SliverPadding(
+          padding: const EdgeInsets.only(top: 8),
+          sliver: SliverGrid.builder(
+            gridDelegate: _gridDelegate,
+            itemBuilder: (context, index) {
+              if (index == visible.length - 1) {
+                controller.onLoadMore();
+              }
+              return VideoCardH(videoItem: visible[index]);
+            },
+            itemCount: visible.length,
+          ),
+        ),
+    ];
   }
 
   // ---------------- 关键词筛选（搜索接口） ----------------
