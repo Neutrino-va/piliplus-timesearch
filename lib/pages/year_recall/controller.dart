@@ -20,6 +20,10 @@ class YearRecallController
   final RxInt selectedYear = DateTime.now().year.obs;
   final Rx<VideoZoneType> selectedZone = VideoZoneType.all.obs;
 
+  /// 年份回顾数据模式：true=考古推荐流（官方每周必看聚合，无需关键词），
+  /// false=关键词筛选（搜索接口）。默认推荐流。
+  final RxBool feedMode = true.obs;
+
   /// 搜索关键词（B 站接口必填，为空时接口返回 -400 请求错误）。
   final RxString keyword = ''.obs;
 

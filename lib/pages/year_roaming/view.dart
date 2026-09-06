@@ -13,6 +13,7 @@ import 'package:PiliPlus/models_new/history/list.dart';
 import 'package:PiliPlus/models_new/video/video_detail/dimension.dart';
 import 'package:PiliPlus/pages/search/widgets/search_text.dart';
 import 'package:PiliPlus/pages/year_recall/controller.dart';
+import 'package:PiliPlus/pages/year_recall/feed_controller.dart';
 import 'package:PiliPlus/pages/year_recall/view.dart';
 import 'package:PiliPlus/pages/year_roaming/controller.dart';
 import 'package:PiliPlus/utils/date_utils.dart';
@@ -42,20 +43,39 @@ class _YearRoamingPageState extends State<YearRoamingPage>
   /// 「年份回顾」控制器懒创建：首次切到该模式时才实例化并发起请求。
   YearRecallController? _recallController;
 
+  /// 「考古推荐流」控制器（每周必看聚合），仅在推荐流模式下懒创建。
+  YearRecallFeedController? _feedController;
+
   YearRecallController? get _recall {
     if (!_controller.recallMode.value) return null;
     // putOrFind 与其他入口共享实例，避免重复创建。
-    final controller = _recallController ??= Get.putOrFind(
-      YearRecallController.new,
-    );
+    final controller =
+        _recallController ??= Get.putOrFind<YearRecallController>(
+          YearRecallController.new,
+        );
     return controller;
+  }
+
+  YearRecallFeedController? get _feed {
+    final keywordController = _recall;
+    if (keywordController == null || !keywordController.feedMode.value) {
+      return null;
+    }
+    final feedController =
+        _feedController ??= Get.putOrFind<YearRecallFeedController>(
+          YearRecallFeedController.new,
+        );
+    feedController.ensureSeriesList();
+    return feedController;
   }
 
   void _setRecallMode(bool value) {
     if (_controller.recallMode.value == value) return;
     _controller.recallMode.value = value;
     if (value) {
-      _recall;
+      _recallController ??= Get.putOrFind<YearRecallController>(
+        YearRecallController.new,
+      );
       _scrollController.jumpTo(0);
     }
   }
@@ -94,7 +114,7 @@ class _YearRoamingPageState extends State<YearRoamingPage>
             slivers: [
               SliverToBoxAdapter(child: _buildModeSwitch(theme)),
               if (_recall case final recallController?) ...[
-                ...YearRecallView.buildSlivers(theme, recallController),
+                ...YearRecallView.buildSlivers(theme, recallController, _feed),
               ] else ...[
                 SliverToBoxAdapter(child: _buildYearPicker(theme)),
                 ...switch (state) {
@@ -185,20 +205,19 @@ class _YearRoamingPageState extends State<YearRoamingPage>
             scrollDirection: Axis.horizontal,
             child: Row(
               spacing: 8,
-              children: _controller.availableYears
-                  .map(
-                    (year) => SearchText(
-                      text: '$year',
-                      onTap: (_) => _controller.selectYear(year),
-                      bgColor: _controller.isYearSelected(year)
-                          ? theme.colorScheme.secondaryContainer
-                          : null,
-                      textColor: _controller.isYearSelected(year)
-                          ? theme.colorScheme.onSecondaryContainer
-                          : null,
-                    ),
-                  )
-                  .toList(),
+              children: [
+                for (final month in _controller.availableMonths)
+                  SearchText(
+                    text: month == 0 ? '全年' : '$month月',
+                    onTap: (_) => _controller.selectMonth(month),
+                    bgColor: _controller.selectedMonth.value == month
+                        ? theme.colorScheme.secondaryContainer
+                        : null,
+                    textColor: _controller.selectedMonth.value == month
+                        ? theme.colorScheme.onSecondaryContainer
+                        : null,
+                  ),
+              ],
             ),
           ),
           const SizedBox(height: 8),
@@ -226,6 +245,7 @@ class _YearRoamingPageState extends State<YearRoamingPage>
           ),
           const SizedBox(height: 4),
           Text(
+            '数据来源：B站观看历史，仅保留最近一年，更早时段无法查询。'
             '统计口径：按该范围内的观看记录计算；“最喜欢”指范围内看过且当前仍在收藏夹中的内容。',
             style: TextStyle(
               fontSize: 12,
@@ -418,12 +438,146 @@ class _YearRoamingPageState extends State<YearRoamingPage>
             _buildHighlight(theme, highlight),
           ],
           const SizedBox(height: 12),
+          _buildZoneStats(theme, records.length),
+          const SizedBox(height: 12),
           Text(
             '这一年的观看内容',
             style: theme.textTheme.titleMedium?.copyWith(
               fontWeight: FontWeight.bold,
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  /// 分区统计（小黑盒游戏时长统计风格）：
+  /// 每个分区一行——名称、按观看时长占比绘制的横条、总时长与条数，
+  /// 以及该分区观看时长最长的视频。统计范围跟随当前选择的区间（全年/单月）。
+  Widget _buildZoneStats(ThemeData theme, int recordCount) {
+    final stats = _controller.zoneStats;
+    if (stats.isEmpty) return const SizedBox.shrink();
+    final maxSeconds = stats.first.seconds;
+    final showCount = stats.length > 12 ? 12 : stats.length;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest.withValues(
+          alpha: 0.45,
+        ),
+        borderRadius: Style.mdRadius,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        spacing: 12,
+        children: [
+          Row(
+            children: [
+              Text(
+                '分区统计',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                '基于已加载的 $recordCount 条记录',
+                style: TextStyle(fontSize: 11, color: theme.colorScheme.outline),
+              ),
+            ],
+          ),
+          for (final stat in stats.take(showCount))
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              spacing: 4,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      stat.name,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      DurationUtils.formatTimeDuration(
+                        Duration(seconds: stat.seconds),
+                      ),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: theme.colorScheme.primary,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '${stat.count}条',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: theme.colorScheme.outline,
+                      ),
+                    ),
+                  ],
+                ),
+                LayoutBuilder(
+                  builder: (context, constraints) => Align(
+                    alignment: Alignment.centerLeft,
+                    child: Container(
+                      width: math.max(
+                        4.0,
+                        constraints.maxWidth *
+                            (maxSeconds == 0
+                                ? 0.0
+                                : stat.seconds / maxSeconds),
+                      ),
+                      height: 6,
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primary.withValues(
+                          alpha: 0.75,
+                        ),
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                    ),
+                  ),
+                ),
+                Row(
+                  children: [
+                    Text(
+                      '⏱ 最久观看',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: theme.colorScheme.outline,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        stat.topTitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+                    Text(
+                      DurationUtils.formatDuration(stat.topSeconds),
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: theme.colorScheme.outline,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          if (stats.length > showCount)
+            Text(
+              '还有 ${stats.length - showCount} 个分区未展示',
+              style: TextStyle(fontSize: 11, color: theme.colorScheme.outline),
+            ),
         ],
       ),
     );

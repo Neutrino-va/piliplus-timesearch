@@ -1,30 +1,227 @@
+import 'package:PiliPlus/common/skeleton/video_card_h.dart';
 import 'package:PiliPlus/common/widgets/loading_widget/http_error.dart';
 import 'package:PiliPlus/common/widgets/video_card/video_card_h.dart';
-import 'package:PiliPlus/common/skeleton/video_card_h.dart';
 import 'package:PiliPlus/http/loading_state.dart';
 import 'package:PiliPlus/models/common/search/video_search_type.dart';
+import 'package:PiliPlus/models/model_hot_video_item.dart';
 import 'package:PiliPlus/models/search/result.dart';
 import 'package:PiliPlus/pages/search/widgets/search_text.dart';
 import 'package:PiliPlus/pages/year_recall/controller.dart';
+import 'package:PiliPlus/pages/year_recall/feed_controller.dart';
 import 'package:PiliPlus/utils/grid.dart';
 import 'package:get/get.dart';
 import 'package:material_ui/material_ui.dart';
 
 /// 「年份回顾」区段：以 slivers 形式嵌入年份漫游页的 CustomScrollView。
-/// 排序/分区/年份切换均即时重查，分页为滚动到底自动加载下一页。
+/// 两种数据模式：
+/// - 考古推荐流（默认）：聚合 B 站官方「每周必看」合集，无需关键词；
+/// - 关键词筛选：搜索接口按年份+分区+排序过滤（B站要求关键词）。
 abstract final class YearRecallView {
   static final _gridDelegate = Grid.videoCardHDelegate();
 
-  /// 排序选项：(展示名, 搜索接口 order 值)。
-  static const List<(String, String)> _orders = [
-    ('综合·热度', 'totalrank'),
-    ('最多点赞', 'like'),
-    ('最多播放', 'click'),
-    ('最多收藏', 'stow'),
-    ('最新发布', 'pubdate'),
-  ];
-
   static List<Widget> buildSlivers(
+    ThemeData theme,
+    YearRecallController keywordController,
+    YearRecallFeedController? feedController,
+  ) {
+    return [
+      SliverToBoxAdapter(child: _buildModeRow(theme, keywordController)),
+      if (keywordController.feedMode.value)
+        ..._buildFeedSection(theme, keywordController, feedController)
+      else
+        ..._buildKeywordSection(theme, keywordController),
+    ];
+  }
+
+  static Widget _chip({
+    required ThemeData theme,
+    required String text,
+    required bool selected,
+    required VoidCallback onTap,
+    bool enabled = true,
+  }) {
+    // 选中态由父级 Obx 统一重建，这里不再包 Obx（内部无响应式读取）。
+    return SearchText(
+      text: text,
+      onTap: enabled ? (_) => onTap() : null,
+      bgColor: selected ? theme.colorScheme.secondaryContainer : null,
+      textColor: !enabled
+          ? theme.colorScheme.outline.withValues(alpha: 0.4)
+          : selected
+          ? theme.colorScheme.onSecondaryContainer
+          : null,
+    );
+  }
+
+  /// 数据模式切换：「考古推荐流」（官方每周必看聚合）/「关键词筛选」。
+  static Widget _buildModeRow(
+    ThemeData theme,
+    YearRecallController controller,
+  ) {
+    final feedMode = controller.feedMode.value;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+      child: Row(
+        spacing: 8,
+        children: [
+          SearchText(
+            text: '考古推荐流',
+            bgColor: feedMode ? theme.colorScheme.secondaryContainer : null,
+            textColor: feedMode
+                ? theme.colorScheme.onSecondaryContainer
+                : null,
+            onTap: (_) => controller.feedMode.value = true,
+          ),
+          SearchText(
+            text: '关键词筛选',
+            bgColor: !feedMode ? theme.colorScheme.secondaryContainer : null,
+            textColor: !feedMode
+                ? theme.colorScheme.onSecondaryContainer
+                : null,
+            onTap: (_) => controller.feedMode.value = false,
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ---------------- 考古推荐流（每周必看聚合） ----------------
+
+  static List<Widget> _buildFeedSection(
+    ThemeData theme,
+    YearRecallController keywordController,
+    YearRecallFeedController? controller,
+  ) {
+    if (controller == null) {
+      return const [
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: EdgeInsets.symmetric(vertical: 80),
+            child: Center(child: CircularProgressIndicator()),
+          ),
+        ),
+      ];
+    }
+    return [
+      SliverToBoxAdapter(child: _buildFeedYearPicker(theme, controller)),
+      ..._buildFeedContent(theme, controller),
+    ];
+  }
+
+  static Widget _buildFeedYearPicker(
+    ThemeData theme,
+    YearRecallFeedController controller,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                '选择年份（按发布时间）',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                '${controller.selectedYear.value} 年每周必看',
+                style: TextStyle(color: theme.colorScheme.primary),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              spacing: 8,
+              children: [
+                for (final year in controller.availableYears)
+                  _chip(
+                    theme: theme,
+                    text: '$year',
+                    selected: controller.selectedYear.value == year,
+                    onTap: () => controller.selectYear(year),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '内容为 B 站官方「每周必看」合集，按周回看当年全站热门；'
+            '更早年份或指定分区的精确筛选请切换到「关键词筛选」。',
+            style: TextStyle(fontSize: 11, color: theme.colorScheme.outline),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static List<Widget> _buildFeedContent(
+    ThemeData theme,
+    YearRecallFeedController controller,
+  ) {
+    return switch (controller.loadingState.value) {
+      Loading() => [
+        SliverGrid(
+          gridDelegate: _gridDelegate,
+          delegate: SliverChildBuilderDelegate(
+            (context, index) => const VideoCardHSkeleton(),
+            childCount: 10,
+          ),
+        ),
+      ],
+      Success<List<HotVideoItemModel>?>(:final response) =>
+        response == null || response.isEmpty
+            ? [
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 48, 24, 64),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.video_library_outlined,
+                          size: 56,
+                          color: theme.colorScheme.outline,
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          '${controller.selectedYear.value} 年没有可回看的每周必看期数',
+                          style: theme.textTheme.titleMedium,
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ]
+            : [
+                SliverPadding(
+                  padding: const EdgeInsets.only(top: 8),
+                  sliver: SliverGrid.builder(
+                    gridDelegate: _gridDelegate,
+                    itemBuilder: (context, index) {
+                      if (index == response.length - 1) {
+                        controller.onLoadMore();
+                      }
+                      return VideoCardH(videoItem: response[index]);
+                    },
+                    itemCount: response.length,
+                  ),
+                ),
+              ],
+      Error(:final errMsg) => [
+        HttpError(errMsg: errMsg, onReload: controller.onReload),
+      ],
+    };
+  }
+
+  // ---------------- 关键词筛选（搜索接口） ----------------
+
+  static List<Widget> _buildKeywordSection(
     ThemeData theme,
     YearRecallController controller,
   ) {
@@ -37,26 +234,11 @@ abstract final class YearRecallView {
   }
 
   /// 关键词输入栏。实测 B 站搜索接口对空关键词返回 -400「请求错误」，
-  /// 因此「年份回顾」需要关键词配合年份/分区/排序浏览。
+  /// 因此「关键词筛选」需要关键词配合年份/分区/排序浏览。
   static Widget _buildKeywordBar(
     ThemeData theme,
     YearRecallController controller,
   ) => _KeywordBar(controller: controller);
-
-  static Widget _chip({
-    required ThemeData theme,
-    required String text,
-    required bool selected,
-    required VoidCallback onTap,
-  }) {
-    // 选中态由父级 Obx 统一重建，这里不再包 Obx（内部无响应式读取）。
-    return SearchText(
-      text: text,
-      onTap: (_) => onTap(),
-      bgColor: selected ? theme.colorScheme.secondaryContainer : null,
-      textColor: selected ? theme.colorScheme.onSecondaryContainer : null,
-    );
-  }
 
   static Widget _buildYearPicker(
     ThemeData theme,
@@ -169,6 +351,14 @@ abstract final class YearRecallView {
       ),
     );
   }
+
+  static const List<(String, String)> _orders = [
+    ('综合·热度', 'totalrank'),
+    ('最多点赞', 'like'),
+    ('最多播放', 'click'),
+    ('最多收藏', 'stow'),
+    ('最新发布', 'pubdate'),
+  ];
 
   static List<Widget> _buildContent(
     ThemeData theme,

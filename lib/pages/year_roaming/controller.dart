@@ -80,23 +80,22 @@ class YearRoamingController
   DateTime get latestDate => DateTime.now();
 
   List<int> get availableYears {
-    // 只展示确认有数据的年份：当前年份 + 实际取到过记录的年份，
-    // 剔除已锚定探测为空的年份；若某次查询自然走到数据尽头，
-    // 则用真实边界补齐中间年份（期间必有数据，最迟可由锚定探测确认）。
-    final Set<int> years = {currentYear, ...yearsWithData};
-    if (dataEndReached && dataOldest.value != null) {
-      for (
-        int year = dataOldest.value!.year;
-        year <= currentYear;
-        year++
-      ) {
-        years.add(year);
-      }
-    }
-    final result = years.where((year) => !emptyYears.contains(year)).toList()
-      ..sort((a, b) => b.compareTo(a));
-    return result.isEmpty ? [currentYear] : result;
+    // B 站观看历史仅保留约一年，当年以外的年份按钮只会得到空数据，
+    // 属于误导性入口；更早时段请用日期区间选择（锚定探测支持）。
+    return [currentYear];
   }
+
+  /// 月份芯片：0 = 全年，1..当前月。未来月份不提供。
+  List<int> get availableMonths {
+    final months = <int>[0];
+    for (int month = 1; month <= latestDate.month; month++) {
+      months.add(month);
+    }
+    return months;
+  }
+
+  /// 当前选中的月份：0 = 全年，1-12 = 当年对应月份。
+  final RxInt selectedMonth = 0.obs;
 
   /// 日期选择器的最早可选日期：边界未探明前保持 2009 年可探，
   /// 已探明后收窄到真实数据起点。
@@ -104,6 +103,44 @@ class YearRoamingController
       (dataEndReached && dataOldest.value != null)
       ? dataOldest.value!
       : firstAvailableDate;
+
+  /// 选择当年某个月份（month=0 表示全年）。
+  void selectMonth(int month) {
+    if (selectedMonth.value == month) return;
+    final year = currentYear;
+    if (month == 0) {
+      selectRange(_yearStart(year), _yearEnd(year));
+    } else {
+      final start = DateTime(year, month, 1);
+      final end = DateTime(year, month + 1, 0, 23, 59, 59);
+      if (start.isAfter(latestDate)) return;
+      selectRange(start, end.isAfter(latestDate) ? latestDate : end);
+    }
+  }
+
+  /// 分区统计条目（小黑盒风格），按观看时长降序。
+  List<YearZoneStat> get zoneStats {
+    final records = loadingState.value.dataOrNull;
+    if (records == null || records.isEmpty) return const [];
+    final map = <String, _ZoneAcc>{};
+    for (final item in records) {
+      final zone = item.tagName?.isNotEmpty == true ? item.tagName! : '其他';
+      final acc = map.putIfAbsent(zone, _ZoneAcc.new);
+      final seconds = _watchedSeconds(item);
+      acc.seconds += seconds;
+      acc.count++;
+      if (seconds > acc.topSeconds) {
+        acc.topSeconds = seconds;
+        acc.topTitle = item.title ?? '未命名内容';
+      }
+    }
+    final stats = map.entries
+        .map((e) => YearZoneStat(e.key, e.value.count, e.value.seconds,
+            e.value.topTitle, e.value.topSeconds))
+        .toList();
+    stats.sort((a, b) => b.seconds.compareTo(a.seconds));
+    return stats;
+  }
 
   HistoryItemModel? get highlightItem {
     final records = loadingState.value.dataOrNull;
@@ -160,7 +197,14 @@ class YearRoamingController
 
     // 严格使用服务端返回的 cursor 作为下一页指针；
     // max/view_at/business 必须整体来自 cursor，禁止用列表末项伪造游标。
-    for (int request = 0; request < 60; request++) {
+    // 锚定查询（过去区间）放宽到 200 页：单月历史可能超过 60 页
+    //（重度观看账号），否则月份统计会缺数据；当前年份仍从最新开始。
+    final int maxRequests = anchoredPast ? 200 : 60;
+    for (int request = 0; request < maxRequests; request++) {
+      if (request > 0 && request % 10 == 0) {
+        // 轻微限速，降低触发风控的概率。
+        await Future.delayed(const Duration(milliseconds: 60));
+      }
       await _logLine(
         '第${request + 1}次请求: max=$max view_at=$viewAt business=$business'
         '${request == 0 && anchoredPast ? " (锚定于区间末端)" : ""}',
@@ -327,8 +371,28 @@ class YearRoamingController
     rangeStart.value = safeStart;
     rangeEnd.value = safeEnd;
     selectedYear.value = safeStart.year;
+    _syncSelectedMonth(safeStart, safeEnd);
     resetStatistics();
     onReload();
+  }
+
+  /// 判断当前区间是否恰好为某个自然月（含当月已过去部分），同步月份芯片。
+  void _syncSelectedMonth(DateTime start, DateTime end) {
+    final now = latestDate;
+    final isCurrentMonth = start.year == now.year && start.month == now.month;
+    final monthEndDay = DateTime(start.year, start.month + 1, 0).day;
+    final endCoveredWholeMonth =
+        end.day >= monthEndDay ||
+        (isCurrentMonth &&
+            end.year == now.year &&
+            end.month == now.month &&
+            end.day == now.day);
+    final isWholeMonth =
+        start.year == end.year &&
+        start.month == end.month &&
+        start.day == 1 &&
+        endCoveredWholeMonth;
+    selectedMonth.value = isWholeMonth ? start.month : 0;
   }
 
   bool isYearSelected(int year) {
@@ -442,4 +506,37 @@ class YearRoamingController
   );
 
   String formatRecordDate(int? timestamp) => DateFormatUtils.format(timestamp);
+}
+
+/// 分区统计条目。
+class YearZoneStat {
+  const YearZoneStat(
+    this.name,
+    this.count,
+    this.seconds,
+    this.topTitle,
+    this.topSeconds,
+  );
+
+  /// 分区名（B站子分区，如「手机游戏」）。
+  final String name;
+
+  /// 该分区的观看记录条数。
+  final int count;
+
+  /// 该分区的总观看秒数。
+  final int seconds;
+
+  /// 该分区观看时长最长的视频标题。
+  final String topTitle;
+
+  /// 该分区单条最长观看秒数。
+  final int topSeconds;
+}
+
+class _ZoneAcc {
+  int seconds = 0;
+  int count = 0;
+  int topSeconds = 0;
+  String topTitle = '';
 }
