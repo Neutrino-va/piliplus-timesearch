@@ -1,5 +1,6 @@
 import 'package:PiliPlus/common/style.dart';
-import 'package:PiliPlus/grpc/bilibili/main/community/reply/v1.pb.dart' hide TextStyle;
+import 'package:PiliPlus/grpc/bilibili/main/community/reply/v1.pb.dart'
+    hide TextStyle;
 import 'package:PiliPlus/http/api.dart';
 import 'package:PiliPlus/http/init.dart';
 import 'package:PiliPlus/http/loading_state.dart';
@@ -95,9 +96,7 @@ class _MyLikesRankCardState extends State<MyLikesRankCard> {
     } else if (res case Error(:final errMsg, :final code)) {
       final rateLimited =
           code == 412 || code == 429 || code == -352 || code == -1200;
-      _likeError = rateLimited
-          ? '被B站限流了，请几分钟后再试（code $code）'
-          : errMsg;
+      _likeError = rateLimited ? '被B站限流了，请几分钟后再试（code $code）' : errMsg;
       _likeLoaded = true;
     }
     _likeLoading = false;
@@ -108,8 +107,7 @@ class _MyLikesRankCardState extends State<MyLikesRankCard> {
     final items = _feedFilter.isEmpty
         ? _feedItems
         : _feedItems.where((e) => e.item?.business == _feedFilter).toList();
-    return items
-      ..sort((a, b) => (b.counts ?? 0).compareTo(a.counts ?? 0));
+    return items..sort((a, b) => (b.counts ?? 0).compareTo(a.counts ?? 0));
   }
 
   List<String> get _feedBusinesses {
@@ -214,31 +212,36 @@ class _MyLikesRankCardState extends State<MyLikesRankCard> {
         ),
         borderRadius: Style.mdRadius,
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        spacing: 10,
-        children: [
-          Row(
-            children: [
-              Text(
-                '我的评论获赞排行',
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
+      // 卡片内的 InkWell 需要 Material 祖先才能渲染水波纹;
+      // 外层边距/圆角由 Container 的 decoration 负责,这里用透明 Material。
+      child: Material(
+        type: MaterialType.transparency,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          spacing: 10,
+          children: [
+            Row(
+              children: [
+                Text(
+                  '我的评论获赞排行',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
-              ),
-              const Spacer(),
-              Text(
-                '数据来自B站「收到的赞」（需登录）',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: theme.colorScheme.outline,
+                const Spacer(),
+                Text(
+                  '数据来自B站「收到的赞」（需登录）',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: theme.colorScheme.outline,
+                  ),
                 ),
-              ),
-            ],
-          ),
-          ..._buildLikeFeed(theme),
-          ..._buildLocalSection(theme),
-        ],
+              ],
+            ),
+            ..._buildLikeFeed(theme),
+            ..._buildLocalSection(theme),
+          ],
+        ),
       ),
     );
   }
