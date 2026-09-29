@@ -15,10 +15,10 @@ import 'package:flutter/material.dart';
 /// 「我的回顾」· 我的评论获赞排行。
 ///
 /// 主数据源:B站消息中心「收到的赞」(x/msgfeed/like,需登录)——
-/// 官方按内容聚合的全部历史获赞(评论/视频/动态等),数据真实完整,按
-/// cursor 分页加载。辅助数据源:本应用内发送的评论(本地记录),支持逐条
-/// 刷新实时获赞(seek_rpid 定位)。B站无历史弹幕聚合接口,弹幕仅在收到
-/// 过赞时出现在消息流中。
+/// 官方按内容聚合的全部历史获赞(评论/视频/动态等),cursor 分页。
+/// 辅助数据源:本应用内发送的评论(本地记录),可逐条刷新实时获赞
+/// (seek_rpid 定位)。B站无历史弹幕聚合接口,弹幕仅在收到过赞时
+/// 出现在消息流中。
 class MyLikesRankCard extends StatefulWidget {
   const MyLikesRankCard({super.key});
 
@@ -212,36 +212,31 @@ class _MyLikesRankCardState extends State<MyLikesRankCard> {
         ),
         borderRadius: Style.mdRadius,
       ),
-      // 卡片内的 InkWell 需要 Material 祖先才能渲染水波纹;
-      // 外层边距/圆角由 Container 的 decoration 负责,这里用透明 Material。
-      child: Material(
-        type: MaterialType.transparency,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          spacing: 10,
-          children: [
-            Row(
-              children: [
-                Text(
-                  '我的评论获赞排行',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        spacing: 10,
+        children: [
+          Row(
+            children: [
+              Text(
+                '我的评论获赞排行',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
                 ),
-                const Spacer(),
-                Text(
-                  '数据来自B站「收到的赞」（需登录）',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: theme.colorScheme.outline,
-                  ),
+              ),
+              const Spacer(),
+              Text(
+                '数据来自B站「收到的赞」（需登录）',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: theme.colorScheme.outline,
                 ),
-              ],
-            ),
-            ..._buildLikeFeed(theme),
-            ..._buildLocalSection(theme),
-          ],
-        ),
+              ),
+            ],
+          ),
+          ..._buildLikeFeed(theme),
+          ..._buildLocalSection(theme),
+        ],
       ),
     );
   }
@@ -304,8 +299,7 @@ class _MyLikesRankCardState extends State<MyLikesRankCard> {
       for (final entry in shown.asMap().entries)
         Padding(
           padding: const EdgeInsets.only(bottom: 10),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(8),
+          child: GestureDetector(
             onTap: () => _openContent(entry.value),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -400,24 +394,25 @@ class _MyLikesRankCardState extends State<MyLikesRankCard> {
     bool selected,
     VoidCallback onTap,
   ) {
-    return Material(
-      color: selected
-          ? theme.colorScheme.secondaryContainer
-          : theme.colorScheme.onInverseSurface,
-      borderRadius: BorderRadius.circular(6),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(6),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
-          child: Text(
-            text,
-            style: TextStyle(
-              fontSize: 12,
-              color: selected
-                  ? theme.colorScheme.onSecondaryContainer
-                  : theme.colorScheme.onSurfaceVariant,
-            ),
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
+        decoration: BoxDecoration(
+          color: selected
+              ? theme.colorScheme.secondaryContainer.withValues(alpha: 0.7)
+              : theme.colorScheme.surfaceContainerHighest.withValues(
+                  alpha: 0.6,
+                ),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Text(
+          text,
+          style: TextStyle(
+            fontSize: 12,
+            color: selected
+                ? theme.colorScheme.onSecondaryContainer
+                : theme.colorScheme.onSurfaceVariant,
           ),
         ),
       ),
@@ -464,8 +459,7 @@ class _MyLikesRankCardState extends State<MyLikesRankCard> {
         for (final entry in _localReplies.asMap().entries.take(5))
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(8),
+            child: GestureDetector(
               onTap: entry.value.type.toInt() == 1
                   ? () => PiliScheme.videoPush(
                       entry.value.oid.toInt(),
