@@ -99,10 +99,22 @@ class YearRoamingController
   /// 当前选中的月份：0 = 全年，1-12 = 当年对应月份。
   final RxInt selectedMonth = 0.obs;
 
+  /// 词云点击筛选的关键词('' = 未筛选)。只过滤下方观看列表,
+  /// 总结与统计卡仍基于全量记录。
+  final RxString keywordFilter = ''.obs;
+
+  void toggleKeywordFilter(String word) =>
+      keywordFilter.value = keywordFilter.value == word ? '' : word;
+
+  /// 本应用内的搜索历史(偏好词云数据源之一)。
+  List<String> get searchTerms {
+    final raw = GStorage.historyWord.get('cacheList');
+    return raw is List ? raw.map((e) => e.toString()).toList() : const [];
+  }
+
   /// 日期选择器的最早可选日期：边界未探明前保持 2009 年可探，
   /// 已探明后收窄到真实数据起点。
-  DateTime get pickerFirstDate =>
-      (dataEndReached && dataOldest.value != null)
+  DateTime get pickerFirstDate => (dataEndReached && dataOldest.value != null)
       ? dataOldest.value!
       : firstAvailableDate;
 
@@ -137,8 +149,15 @@ class YearRoamingController
       }
     }
     final stats = map.entries
-        .map((e) => YearZoneStat(e.key, e.value.count, e.value.seconds,
-            e.value.topTitle, e.value.topSeconds))
+        .map(
+          (e) => YearZoneStat(
+            e.key,
+            e.value.count,
+            e.value.seconds,
+            e.value.topTitle,
+            e.value.topSeconds,
+          ),
+        )
         .toList();
     stats.sort((a, b) => b.seconds.compareTo(a.seconds));
     return stats;
@@ -350,8 +369,8 @@ class YearRoamingController
         }
       } else if (res case Error(:final errMsg, :final code)) {
         _logLine('接口返回错误: code=$code message=$errMsg');
-        final rateLimited = code == 412 || code == 429 || code == -352 ||
-            code == -1200;
+        final rateLimited =
+            code == 412 || code == 429 || code == -352 || code == -1200;
         return Error(
           rateLimited ? '被B站限流了，请几分钟后再重试（code $code）' : errMsg,
           code: code,

@@ -17,6 +17,7 @@ import 'package:PiliPlus/pages/year_recall/feed_controller.dart';
 import 'package:PiliPlus/pages/year_recall/view.dart';
 import 'package:PiliPlus/pages/year_roaming/controller.dart';
 import 'package:PiliPlus/pages/year_roaming/my_likes_rank.dart';
+import 'package:PiliPlus/pages/year_roaming/word_cloud.dart';
 import 'package:PiliPlus/utils/date_utils.dart';
 import 'package:PiliPlus/utils/duration_utils.dart';
 import 'package:PiliPlus/utils/extension/get_ext.dart';
@@ -333,16 +334,55 @@ class _YearRoamingPageState extends State<YearRoamingPage>
     List<HistoryItemModel> records,
   ) {
     final highlight = _controller.highlightItem;
+    final filter = _controller.keywordFilter.value;
+    final visible = filter.isEmpty
+        ? records
+        : records
+              .where(
+                (item) =>
+                    (item.title ?? '').toLowerCase().contains(
+                      filter.toLowerCase(),
+                    ) ||
+                    (item.tagName ?? '').toLowerCase().contains(
+                      filter.toLowerCase(),
+                    ) ||
+                    (item.authorName ?? '').toLowerCase().contains(
+                      filter.toLowerCase(),
+                    ),
+              )
+              .toList();
     return [
       SliverToBoxAdapter(child: _buildSummary(theme, records, highlight)),
+      if (filter.isNotEmpty)
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+            child: Row(
+              spacing: 8,
+              children: [
+                Text(
+                  '已按「$filter」筛选，共 ${visible.length} 条',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+                SearchText(
+                  text: '清除筛选',
+                  onTap: (_) => _controller.toggleKeywordFilter(filter),
+                ),
+              ],
+            ),
+          ),
+        ),
       SliverPadding(
         padding: const EdgeInsets.only(top: 8),
         sliver: SliverList.builder(
           itemBuilder: (context, index) => _YearHistoryItem(
-            item: records[index],
-            onTap: () => _openHistoryItem(records[index]),
+            item: visible[index],
+            onTap: () => _openHistoryItem(visible[index]),
           ),
-          itemCount: records.length,
+          itemCount: visible.length,
         ),
       ),
     ];
@@ -438,6 +478,14 @@ class _YearRoamingPageState extends State<YearRoamingPage>
           ],
           const SizedBox(height: 12),
           _buildZoneStats(theme, records.length),
+          const SizedBox(height: 12),
+          WordCloudCard(
+            colorScheme: theme.colorScheme,
+            records: records,
+            searchTerms: _controller.searchTerms,
+            currentFilter: _controller.keywordFilter.value,
+            onToggle: _controller.toggleKeywordFilter,
+          ),
           const SizedBox(height: 12),
           MyLikesRankCard(colorScheme: theme.colorScheme),
           const SizedBox(height: 12),
