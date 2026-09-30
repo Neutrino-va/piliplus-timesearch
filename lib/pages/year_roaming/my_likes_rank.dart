@@ -10,7 +10,7 @@ import 'package:PiliPlus/utils/app_scheme.dart';
 import 'package:PiliPlus/utils/date_utils.dart';
 import 'package:PiliPlus/utils/storage.dart';
 import 'package:fixnum/fixnum.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// 「我的回顾」· 我的评论获赞排行。
 ///
@@ -20,7 +20,12 @@ import 'package:flutter/material.dart';
 /// (seek_rpid 定位)。B站无历史弹幕聚合接口,弹幕仅在收到过赞时
 /// 出现在消息流中。
 class MyLikesRankCard extends StatefulWidget {
-  const MyLikesRankCard({super.key});
+  const MyLikesRankCard({super.key, required this.colorScheme});
+
+  /// 由页面层传入已解析的 ColorScheme:该卡片子树的 Theme.of 曾出现
+  /// 解析为浅色主题的问题(卡片不随深色模式切换),页面上下文解析
+  /// 正确,故在此解析后下传,彻底规避。
+  final ColorScheme colorScheme;
 
   @override
   State<MyLikesRankCard> createState() => _MyLikesRankCardState();
@@ -202,14 +207,14 @@ class _MyLikesRankCardState extends State<MyLikesRankCard> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final colorScheme = widget.colorScheme;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest.withValues(
-          alpha: 0.45,
-        ),
+        // 与分区统计卡完全同源:颜色由页面上下文解析后传入,
+        // 保证两张卡片渲染一致(含深浅色模式跟随)。
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.45),
         borderRadius: Style.mdRadius,
       ),
       child: Column(
@@ -220,8 +225,10 @@ class _MyLikesRankCardState extends State<MyLikesRankCard> {
             children: [
               Text(
                 '我的评论获赞排行',
-                style: theme.textTheme.titleMedium?.copyWith(
+                style: TextStyle(
+                  fontSize: 16,
                   fontWeight: FontWeight.bold,
+                  color: colorScheme.onSurface,
                 ),
               ),
               const Spacer(),
@@ -229,13 +236,13 @@ class _MyLikesRankCardState extends State<MyLikesRankCard> {
                 '数据来自B站「收到的赞」（需登录）',
                 style: TextStyle(
                   fontSize: 11,
-                  color: theme.colorScheme.outline,
+                  color: colorScheme.outline,
                 ),
               ),
             ],
           ),
-          ..._buildLikeFeed(theme),
-          ..._buildLocalSection(theme),
+          ..._buildLikeFeed(colorScheme),
+          ..._buildLocalSection(colorScheme),
         ],
       ),
     );
@@ -243,7 +250,7 @@ class _MyLikesRankCardState extends State<MyLikesRankCard> {
 
   // ---------------- 收到的赞排行(主数据源) ----------------
 
-  List<Widget> _buildLikeFeed(ThemeData theme) {
+  List<Widget> _buildLikeFeed(ColorScheme colorScheme) {
     if (_likeLoading && _feedItems.isEmpty) {
       return const [
         Padding(
@@ -262,7 +269,7 @@ class _MyLikesRankCardState extends State<MyLikesRankCard> {
       return [
         Text(
           _likeError!,
-          style: TextStyle(fontSize: 12, color: theme.colorScheme.outline),
+          style: TextStyle(fontSize: 12, color: colorScheme.outline),
         ),
       ];
     }
@@ -270,7 +277,7 @@ class _MyLikesRankCardState extends State<MyLikesRankCard> {
       return [
         Text(
           '暂无收到的赞记录',
-          style: TextStyle(fontSize: 12, color: theme.colorScheme.outline),
+          style: TextStyle(fontSize: 12, color: colorScheme.outline),
         ),
       ];
     }
@@ -286,11 +293,11 @@ class _MyLikesRankCardState extends State<MyLikesRankCard> {
           child: Row(
             spacing: 8,
             children: [
-              _chip(theme, '全部', _feedFilter.isEmpty, () {
+              _chip(colorScheme, '全部', _feedFilter.isEmpty, () {
                 setState(() => _feedFilter = '');
               }),
               for (final business in businesses)
-                _chip(theme, business, _feedFilter == business, () {
+                _chip(colorScheme, business, _feedFilter == business, () {
                   setState(() => _feedFilter = business);
                 }),
             ],
@@ -311,7 +318,7 @@ class _MyLikesRankCardState extends State<MyLikesRankCard> {
                       '#${entry.key + 1}',
                       style: TextStyle(
                         fontSize: 11,
-                        color: theme.colorScheme.outline,
+                        color: colorScheme.outline,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
@@ -322,7 +329,7 @@ class _MyLikesRankCardState extends State<MyLikesRankCard> {
                         vertical: 1,
                       ),
                       decoration: BoxDecoration(
-                        color: theme.colorScheme.primary.withValues(
+                        color: colorScheme.primary.withValues(
                           alpha: 0.12,
                         ),
                         borderRadius: BorderRadius.circular(4),
@@ -331,7 +338,7 @@ class _MyLikesRankCardState extends State<MyLikesRankCard> {
                         entry.value.item?.business ?? '内容',
                         style: TextStyle(
                           fontSize: 10,
-                          color: theme.colorScheme.primary,
+                          color: colorScheme.primary,
                         ),
                       ),
                     ),
@@ -339,14 +346,14 @@ class _MyLikesRankCardState extends State<MyLikesRankCard> {
                     Icon(
                       Icons.thumb_up_alt_rounded,
                       size: 13,
-                      color: theme.colorScheme.primary,
+                      color: colorScheme.primary,
                     ),
                     const SizedBox(width: 3),
                     Text(
                       '${entry.value.counts ?? 0}',
                       style: TextStyle(
                         fontSize: 13,
-                        color: theme.colorScheme.primary,
+                        color: colorScheme.primary,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
@@ -356,7 +363,11 @@ class _MyLikesRankCardState extends State<MyLikesRankCard> {
                   entry.value.item?.title ?? '(无标题内容)',
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 13),
+                  // 与分区统计的分区名同款字体样式。
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 if ((entry.value.users?.isNotEmpty ?? false))
                   Text(
@@ -364,7 +375,7 @@ class _MyLikesRankCardState extends State<MyLikesRankCard> {
                     '${entry.value.users!.length} 人觉得很赞',
                     style: TextStyle(
                       fontSize: 11,
-                      color: theme.colorScheme.outline,
+                      color: colorScheme.outline,
                     ),
                   ),
               ],
@@ -389,7 +400,7 @@ class _MyLikesRankCardState extends State<MyLikesRankCard> {
   }
 
   Widget _chip(
-    ThemeData theme,
+    ColorScheme colorScheme,
     String text,
     bool selected,
     VoidCallback onTap,
@@ -400,19 +411,18 @@ class _MyLikesRankCardState extends State<MyLikesRankCard> {
         padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
         decoration: BoxDecoration(
           color: selected
-              ? theme.colorScheme.secondaryContainer.withValues(alpha: 0.7)
-              : theme.colorScheme.surfaceContainerHighest.withValues(
-                  alpha: 0.6,
-                ),
+              ? colorScheme.secondaryContainer.withValues(alpha: 0.7)
+              : colorScheme.onSurface.withValues(alpha: 0.08),
           borderRadius: BorderRadius.circular(6),
         ),
         child: Text(
           text,
           style: TextStyle(
             fontSize: 12,
+            fontWeight: selected ? FontWeight.w600 : null,
             color: selected
-                ? theme.colorScheme.onSecondaryContainer
-                : theme.colorScheme.onSurfaceVariant,
+                ? colorScheme.onSecondaryContainer
+                : colorScheme.onSurface,
           ),
         ),
       ),
@@ -421,7 +431,7 @@ class _MyLikesRankCardState extends State<MyLikesRankCard> {
 
   // ---------------- 本应用发送的评论(本地,辅助) ----------------
 
-  List<Widget> _buildLocalSection(ThemeData theme) {
+  List<Widget> _buildLocalSection(ColorScheme colorScheme) {
     final hasData = _localReplies.isNotEmpty;
     return [
       const SizedBox(height: 4),
@@ -429,8 +439,10 @@ class _MyLikesRankCardState extends State<MyLikesRankCard> {
         children: [
           Text(
             '本应用发送的评论（本地记录）',
-            style: theme.textTheme.titleSmall?.copyWith(
+            style: TextStyle(
+              fontSize: 14,
               fontWeight: FontWeight.w600,
+              color: colorScheme.onSurface,
             ),
           ),
           const Spacer(),
@@ -439,7 +451,7 @@ class _MyLikesRankCardState extends State<MyLikesRankCard> {
               '刷新中 $_localDone/${_localReplies.length}',
               style: TextStyle(
                 fontSize: 11,
-                color: theme.colorScheme.outline,
+                color: colorScheme.outline,
               ),
             )
           else
@@ -453,7 +465,7 @@ class _MyLikesRankCardState extends State<MyLikesRankCard> {
       if (!hasData)
         Text(
           '在本应用内发送评论后会自动记录；历史评论可在「我的评论」页导出后导入迁移。',
-          style: TextStyle(fontSize: 11, color: theme.colorScheme.outline),
+          style: TextStyle(fontSize: 11, color: colorScheme.outline),
         )
       else
         for (final entry in _localReplies.asMap().entries.take(5))
@@ -477,7 +489,7 @@ class _MyLikesRankCardState extends State<MyLikesRankCard> {
                       vertical: 2,
                     ),
                     decoration: BoxDecoration(
-                      color: theme.colorScheme.primary.withValues(alpha: 0.12),
+                      color: colorScheme.primary.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: Row(
@@ -486,14 +498,14 @@ class _MyLikesRankCardState extends State<MyLikesRankCard> {
                         Icon(
                           Icons.thumb_up_alt_rounded,
                           size: 11,
-                          color: theme.colorScheme.primary,
+                          color: colorScheme.primary,
                         ),
                         const SizedBox(width: 2),
                         Text(
                           '${entry.value.like}',
                           style: TextStyle(
                             fontSize: 11,
-                            color: theme.colorScheme.primary,
+                            color: colorScheme.primary,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
@@ -505,7 +517,10 @@ class _MyLikesRankCardState extends State<MyLikesRankCard> {
                       entry.value.content.message,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 12),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: colorScheme.onSurface,
+                      ),
                     ),
                   ),
                   Text(
@@ -515,7 +530,7 @@ class _MyLikesRankCardState extends State<MyLikesRankCard> {
                     ),
                     style: TextStyle(
                       fontSize: 11,
-                      color: theme.colorScheme.outline,
+                      color: colorScheme.outline,
                     ),
                   ),
                 ],

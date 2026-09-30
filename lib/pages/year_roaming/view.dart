@@ -50,8 +50,8 @@ class _YearRoamingPageState extends State<YearRoamingPage>
   YearRecallController? get _recall {
     if (!_controller.recallMode.value) return null;
     // putOrFind 与其他入口共享实例，避免重复创建。
-    final controller =
-        _recallController ??= Get.putOrFind<YearRecallController>(
+    final controller = _recallController ??=
+        Get.putOrFind<YearRecallController>(
           YearRecallController.new,
         );
     return controller;
@@ -62,8 +62,8 @@ class _YearRoamingPageState extends State<YearRoamingPage>
     if (keywordController == null || !keywordController.feedMode.value) {
       return null;
     }
-    final feedController =
-        _feedController ??= Get.putOrFind<YearRecallFeedController>(
+    final feedController = _feedController ??=
+        Get.putOrFind<YearRecallFeedController>(
           YearRecallFeedController.new,
         );
     feedController.ensureSeriesList();
@@ -155,17 +155,13 @@ class _YearRoamingPageState extends State<YearRoamingPage>
           SearchText(
             text: '我的回顾',
             bgColor: !recall ? theme.colorScheme.secondaryContainer : null,
-            textColor: !recall
-                ? theme.colorScheme.onSecondaryContainer
-                : null,
+            textColor: !recall ? theme.colorScheme.onSecondaryContainer : null,
             onTap: (_) => _setRecallMode(false),
           ),
           SearchText(
             text: '年份回顾',
             bgColor: recall ? theme.colorScheme.secondaryContainer : null,
-            textColor: recall
-                ? theme.colorScheme.onSecondaryContainer
-                : null,
+            textColor: recall ? theme.colorScheme.onSecondaryContainer : null,
             onTap: (_) => _setRecallMode(true),
           ),
         ],
@@ -443,7 +439,7 @@ class _YearRoamingPageState extends State<YearRoamingPage>
           const SizedBox(height: 12),
           _buildZoneStats(theme, records.length),
           const SizedBox(height: 12),
-          const MyLikesRankCard(),
+          MyLikesRankCard(colorScheme: theme.colorScheme),
           const SizedBox(height: 12),
           Text(
             '这一年的观看内容',
@@ -489,7 +485,10 @@ class _YearRoamingPageState extends State<YearRoamingPage>
               const Spacer(),
               Text(
                 '基于已加载的 $recordCount 条记录',
-                style: TextStyle(fontSize: 11, color: theme.colorScheme.outline),
+                style: TextStyle(
+                  fontSize: 11,
+                  color: theme.colorScheme.outline,
+                ),
               ),
             ],
           ),
@@ -535,9 +534,7 @@ class _YearRoamingPageState extends State<YearRoamingPage>
                       width: math.max(
                         4.0,
                         constraints.maxWidth *
-                            (maxSeconds == 0
-                                ? 0.0
-                                : stat.seconds / maxSeconds),
+                            (maxSeconds == 0 ? 0.0 : stat.seconds / maxSeconds),
                       ),
                       height: 6,
                       decoration: BoxDecoration(
