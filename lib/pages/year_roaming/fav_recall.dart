@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:PiliPlus/http/fav.dart';
 import 'package:PiliPlus/http/loading_state.dart';
 import 'package:PiliPlus/models_new/fav/fav_detail/media.dart';
+import 'package:PiliPlus/models_new/fav/fav_folder/list.dart';
 import 'package:PiliPlus/models_new/history/history.dart';
 import 'package:PiliPlus/models_new/history/list.dart';
 import 'package:PiliPlus/utils/accounts.dart';
@@ -49,6 +50,7 @@ class FavRecallController extends GetxController {
   void _loadFromArchive() {
     final list = <HistoryItemModel>[];
     for (final key in GStorage.favArchive.keys) {
+      if (!(key as String).startsWith('fav_')) continue; // 跳过 folderMeta
       final raw = GStorage.favArchive.get(key);
       if (raw == null) continue;
       try {
@@ -72,16 +74,13 @@ class FavRecallController extends GetxController {
     _refreshing = true;
     progress.value = '准备同步…';
     try {
-      // 默认收藏夹 id(created/list-all 首项即默认夹)
-      int? mediaId;
-      final folders = await FavHttp.allFavFolders(Accounts.main.mid);
-      if (folders case Success(:final response)) {
-        final list = response.list;
-        if (list != null && list.isNotEmpty) {
-          mediaId = list.first.id;
-        }
+      // 收藏夹列表(created/list-all,含默认夹)
+      List<FavFolderInfo>? folders;
+      final foldersRes = await FavHttp.allFavFolders(Accounts.main.mid);
+      if (foldersRes case Success(:final response)) {
+        folders = response.list;
       }
-      if (mediaId == null) {
+      if (folders == null || folders.isEmpty) {
         loadingState.value = const Error('未找到收藏夹');
         return;
       }
@@ -91,49 +90,53 @@ class FavRecallController extends GetxController {
       final merged = {
         for (final item in _all) 'fav_${item.history.oid}': item,
       };
-      int pn = 1;
-      while (true) {
-        progress.value = '同步收藏 第$pn页…';
-        final res = await FavHttp.userFavFolderDetail(
-          mediaId: mediaId,
-          pn: pn,
-          ps: 20,
-          type: 1, // 全部收藏
-        );
-        if (res case Success(:final response)) {
-          final medias = response.medias ?? const <FavDetailItemModel>[];
-          if (medias.isEmpty) break;
-          for (final media in medias) {
-            final converted = _convert(media);
-            if (converted != null) {
-              merged['fav_${media.id}'] = converted;
-              GStorage.favArchive.put(
-                'fav_${media.id}',
-                jsonEncode(converted.toJson()),
-              );
+      // 上次同步时各夹的 media_count 快照:数量未变的空夹跳过重扫
+      final Map<String, int> lastMeta = _loadFolderMeta();
+      final Map<String, int> newMeta = {};
+
+      int collected = 0;
+      // 逐夹聚合:实测 type=1(全部收藏聚合查询)对部分账号返回
+      // 11010「您访问的内容不存在」,只有逐夹 type=0 可靠。
+      for (final folder in folders) {
+        final fid = folder.id;
+        if (fid == null) continue;
+        final title = folder.title ?? '收藏夹';
+        final expected = folder.mediaCount ?? 0;
+        newMeta['$fid'] = expected;
+        if (expected == 0 && lastMeta['$fid'] == 0) continue;
+
+        int pn = 1;
+        while (true) {
+          progress.value = '同步「$title」 第$pn页（已收集 $collected 条）';
+          final res = await FavHttp.userFavFolderDetail(
+            mediaId: fid,
+            pn: pn,
+            ps: 20,
+            type: 0,
+          );
+          if (res case Success(:final response)) {
+            final medias = response.medias ?? const <FavDetailItemModel>[];
+            if (medias.isEmpty) break;
+            for (final media in medias) {
+              final converted = _convert(media);
+              if (converted != null) {
+                final itemKey = 'fav_${media.id}';
+                if (!merged.containsKey(itemKey)) collected++;
+                merged[itemKey] = converted;
+                GStorage.favArchive.put(itemKey, jsonEncode(converted.toJson()));
+              }
             }
-          }
-          if (response.hasMore != true) break;
-          pn++;
-          await Future.delayed(const Duration(milliseconds: 60));
-        } else if (res case Error(:final errMsg, :final code)) {
-          final rateLimited =
-              code == 412 || code == 429 || code == -352 || code == -1200;
-          // 归档有数据时降级展示,否则报错
-          if (merged.isNotEmpty) {
-            SmartDialog.showToast(
-              rateLimited ? '被B站限流，已展示本地归档' : '同步失败：$errMsg',
-            );
+            if (response.hasMore != true) break;
+            pn++;
+            await Future.delayed(const Duration(milliseconds: 60));
+          } else {
+            // 单个夹失败(如私密夹):跳过该夹继续其余
+            SmartDialog.showToast('「$title」同步失败，已跳过');
             break;
           }
-          loadingState.value = Error(
-            rateLimited ? '被B站限流了，请几分钟后再试（code $code）' : errMsg,
-          );
-          return;
-        } else {
-          break;
         }
       }
+      GStorage.favArchive.put('folderMeta', jsonEncode(newMeta));
       _all = merged.values.toList()
         ..sort((a, b) => (b.viewAt ?? 0).compareTo(a.viewAt ?? 0));
       _recomputeYears();
@@ -141,6 +144,18 @@ class FavRecallController extends GetxController {
     } finally {
       _refreshing = false;
       progress.value = '';
+    }
+  }
+
+  /// 上次全量同步时各收藏夹的 media_count 快照。
+  Map<String, int> _loadFolderMeta() {
+    final raw = GStorage.favArchive.get('folderMeta');
+    if (raw == null) return const {};
+    try {
+      final map = jsonDecode(raw) as Map<String, dynamic>;
+      return map.map((k, v) => MapEntry(k, (v as num).toInt()));
+    } catch (_) {
+      return const {};
     }
   }
 
@@ -260,5 +275,7 @@ class FavRecallController extends GetxController {
   }
 
   /// 本地归档总条数(展示用)。
-  int get archiveCount => GStorage.favArchive.length;
+  int get archiveCount => GStorage.favArchive.keys
+      .where((key) => (key as String).startsWith('fav_'))
+      .length;
 }
