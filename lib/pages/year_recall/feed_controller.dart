@@ -23,6 +23,10 @@ class YearRecallFeedController
   /// 当前年份命中的期数（新→旧）。
   List<PopularSeriesListItem>? _yearEditions;
 
+  /// 期数游标:customGetData 按游标取期并做年份精确过滤,
+  /// 跳过无匹配的期数继续向后,选年/刷新时归零。
+  int _editionCursor = 0;
+
   /// 入站必刷经典库全量缓存（早年回退数据源）。
   List<HotVideoItemModel>? _preciousAll;
 
@@ -133,6 +137,7 @@ class YearRecallFeedController
   void selectYear(int year) {
     if (selectedYear.value == year) return;
     selectedYear.value = year;
+    _editionCursor = 0;
     _prepareYearEditions();
     onReload();
   }
@@ -169,22 +174,33 @@ class YearRecallFeedController
     }
 
     final editions = _yearEditions ?? const <PopularSeriesListItem>[];
-    final index = page - 1;
-    if (index >= editions.length) {
-      isEnd = true;
-      return const Success([]);
+    // 年份精确匹配:每周必看按周收录,期内会混入少量跨期旧视频(爆款
+    // 迟到入选),导致选 2020 却出现 2021 投稿。此处按发布年份过滤,
+    // 连续多期无精确匹配时视为该年份内容结束。
+    var skipped = 0;
+    while (_editionCursor < editions.length && skipped < 8) {
+      final res = await VideoHttp.popularSeriesOne(
+        number: editions[_editionCursor].number!,
+      );
+      _editionCursor++;
+      switch (res) {
+        case Success(:final response):
+          final matched = (response.list ?? const <HotVideoItemModel>[])
+              .where(
+                (video) => _yearOf(video.pubdate ?? 0) == selectedYear.value,
+              )
+              .toList();
+          if (matched.isNotEmpty) return Success(matched);
+          skipped++;
+          await Future.delayed(const Duration(milliseconds: 60));
+        case Error(:final errMsg, :final code):
+          return Error(errMsg, code: code);
+        default:
+          return const Error(null);
+      }
     }
-    final res = await VideoHttp.popularSeriesOne(
-      number: editions[index].number!,
-    );
-    switch (res) {
-      case Success(:final response):
-        return Success(response.list ?? <HotVideoItemModel>[]);
-      case Error(:final errMsg, :final code):
-        return Error(errMsg, code: code);
-      default:
-        return const Error(null);
-    }
+    isEnd = true;
+    return const Success([]);
   }
 
   void _queryIfValid() {

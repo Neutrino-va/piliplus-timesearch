@@ -25,9 +25,14 @@ abstract final class GStorage {
   static late final Box<Uint8List>? reply;
 
   /// 年份漫游观看历史本地归档(key=记录唯一键,值=JSON字符串)。
-  /// B站观看历史仅保留约一年,本地归档用于数据资产化:
+  /// B站观看历史只保留有限时长,本地归档用于数据资产化:
   /// 二次进入免请求秒开,且数据可越过保留期长期积累。
   static late final Box<String> yearArchive;
+
+  /// 收藏回顾本地归档(key=fav_aid,值=HistoryItemModel JSON)。
+  /// 收藏数据虽无B站保留期限制,但全量分页拉取请求较多,
+  /// 归档后二次进入秒开,仅做增量刷新。
+  static late final Box<String> favArchive;
 
   static Future<void> init() async {
     Hive.init(path.join(appSupportDirPath, 'hive'));
@@ -66,6 +71,13 @@ abstract final class GStorage {
           return deletedEntries > 20;
         },
       ).then((res) => yearArchive = res),
+      // 收藏回顾归档
+      Hive.openBox<String>(
+        'favArchive',
+        compactionStrategy: (int entries, int deletedEntries) {
+          return deletedEntries > 20;
+        },
+      ).then((res) => favArchive = res),
       Accounts.init(),
       Hive.openBox<int>(
         'watchProgress',

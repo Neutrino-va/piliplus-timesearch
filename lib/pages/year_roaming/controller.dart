@@ -28,8 +28,9 @@ class YearRoamingController
   final Rx<DateTime> rangeStart;
   final Rx<DateTime> rangeEnd;
 
-  /// 页面模式：false=「我的回顾」（按观看时间），true=「年份回顾」（按发布年份浏览）。
-  final RxBool recallMode = false.obs;
+  /// 页面模式：0=「我的回顾」（按观看时间），1=「年份回顾」（按发布年份
+  /// 浏览），2=「收藏回顾」（按收藏时间）。
+  final RxInt pageMode = 0.obs;
 
   /// 已从服务端见过的最早一条记录。仅在游标自然走到尽头（dataEndReached）
   /// 时才是可信的数据边界；被 60 页上限截断的查询不能作为依据。

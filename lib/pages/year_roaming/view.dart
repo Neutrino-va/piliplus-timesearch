@@ -16,6 +16,7 @@ import 'package:PiliPlus/pages/year_recall/controller.dart';
 import 'package:PiliPlus/pages/year_recall/feed_controller.dart';
 import 'package:PiliPlus/pages/year_recall/view.dart';
 import 'package:PiliPlus/pages/year_roaming/controller.dart';
+import 'package:PiliPlus/pages/year_roaming/fav_recall.dart';
 import 'package:PiliPlus/pages/year_roaming/my_likes_rank.dart';
 import 'package:PiliPlus/pages/year_roaming/word_cloud.dart';
 import 'package:PiliPlus/utils/date_utils.dart';
@@ -48,8 +49,11 @@ class _YearRoamingPageState extends State<YearRoamingPage>
   /// 「考古推荐流」控制器（每周必看聚合），仅在推荐流模式下懒创建。
   YearRecallFeedController? _feedController;
 
+  /// 「收藏回顾」控制器懒创建。
+  FavRecallController? _favController;
+
   YearRecallController? get _recall {
-    if (!_controller.recallMode.value) return null;
+    if (_controller.pageMode.value != 1) return null;
     // putOrFind 与其他入口共享实例，避免重复创建。
     final controller = _recallController ??=
         Get.putOrFind<YearRecallController>(
@@ -71,15 +75,28 @@ class _YearRoamingPageState extends State<YearRoamingPage>
     return feedController;
   }
 
-  void _setRecallMode(bool value) {
-    if (_controller.recallMode.value == value) return;
-    _controller.recallMode.value = value;
-    if (value) {
+  FavRecallController? get _fav {
+    if (_controller.pageMode.value != 2) return null;
+    final controller = _favController ??= Get.putOrFind<FavRecallController>(
+      FavRecallController.new,
+    );
+    return controller;
+  }
+
+  void _setPageMode(int mode) {
+    if (_controller.pageMode.value == mode) return;
+    _controller.pageMode.value = mode;
+    if (mode == 1) {
       _recallController ??= Get.putOrFind<YearRecallController>(
         YearRecallController.new,
       );
-      _scrollController.jumpTo(0);
     }
+    if (mode == 2) {
+      _favController ??= Get.putOrFind<FavRecallController>(
+        FavRecallController.new,
+      );
+    }
+    _scrollController.jumpTo(0);
   }
 
   @override
@@ -115,7 +132,22 @@ class _YearRoamingPageState extends State<YearRoamingPage>
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: [
               SliverToBoxAdapter(child: _buildModeSwitch(theme)),
-              if (_recall case final recallController?) ...[
+              if (_controller.pageMode.value == 2)
+                ...switch (_fav) {
+                  final favController? => _buildFavSection(
+                    theme,
+                    favController,
+                  ),
+                  null => [
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 60),
+                        child: Center(child: CircularProgressIndicator()),
+                      ),
+                    ),
+                  ],
+                }
+              else if (_recall case final recallController?) ...[
                 ...YearRecallView.buildSlivers(theme, recallController, _feed),
               ] else ...[
                 SliverToBoxAdapter(child: _buildYearPicker(theme)),
@@ -145,26 +177,23 @@ class _YearRoamingPageState extends State<YearRoamingPage>
     );
   }
 
-  /// 顶部模式切换：「我的回顾」（按观看时间）/「年份回顾」（按发布年份）。
+  /// 顶部模式切换：「我的回顾」/「年份回顾」/「收藏回顾」。
   Widget _buildModeSwitch(ThemeData theme) {
-    final recall = _controller.recallMode.value;
+    final mode = _controller.pageMode.value;
+    Widget chip(String text, int value) => SearchText(
+      text: text,
+      bgColor: mode == value ? theme.colorScheme.secondaryContainer : null,
+      textColor: mode == value ? theme.colorScheme.onSecondaryContainer : null,
+      onTap: (_) => _setPageMode(value),
+    );
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
       child: Row(
         spacing: 8,
         children: [
-          SearchText(
-            text: '我的回顾',
-            bgColor: !recall ? theme.colorScheme.secondaryContainer : null,
-            textColor: !recall ? theme.colorScheme.onSecondaryContainer : null,
-            onTap: (_) => _setRecallMode(false),
-          ),
-          SearchText(
-            text: '年份回顾',
-            bgColor: recall ? theme.colorScheme.secondaryContainer : null,
-            textColor: recall ? theme.colorScheme.onSecondaryContainer : null,
-            onTap: (_) => _setRecallMode(true),
-          ),
+          chip('我的回顾', 0),
+          chip('年份回顾', 1),
+          chip('收藏回顾', 2),
         ],
       ),
     );
@@ -323,6 +352,208 @@ class _YearRoamingPageState extends State<YearRoamingPage>
               style: TextStyle(color: theme.colorScheme.outline),
               textAlign: TextAlign.center,
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 「收藏回顾」区段:年份/月份芯片 + 迷你统计 + 偏好词云 + 收藏列表。
+  List<Widget> _buildFavSection(
+    ThemeData theme,
+    FavRecallController fav,
+  ) {
+    return switch (fav.loadingState.value) {
+      Loading() => [
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 60),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Center(child: CircularProgressIndicator()),
+                if (fav.progress.value.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: Text(
+                      fav.progress.value,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: theme.colorScheme.outline,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ],
+      Error(:final errMsg) => [
+        HttpError(errMsg: errMsg, onReload: fav.refreshData),
+      ],
+      Success(:final response) => [
+        SliverToBoxAdapter(child: _buildFavHeader(theme, fav)),
+        SliverToBoxAdapter(child: _buildFavStats(theme, fav)),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+            child: WordCloudCard(
+              colorScheme: theme.colorScheme,
+              records: response,
+              searchTerms: fav.searchTerms,
+              currentFilter: fav.keywordFilter.value,
+              onToggle: fav.toggleKeywordFilter,
+            ),
+          ),
+        ),
+        if (fav.keywordFilter.value.isNotEmpty)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+              child: Row(
+                spacing: 8,
+                children: [
+                  Text(
+                    '已按「${fav.keywordFilter.value}」筛选，'
+                    '共 ${fav.filteredByKeyword.length} 条',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                  SearchText(
+                    text: '清除筛选',
+                    onTap: (_) => fav.toggleKeywordFilter(
+                      fav.keywordFilter.value,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        SliverPadding(
+          padding: const EdgeInsets.only(top: 8),
+          sliver: SliverList.builder(
+            itemBuilder: (context, index) => _YearHistoryItem(
+              item: fav.filteredByKeyword[index],
+              onTap: () => _openHistoryItem(fav.filteredByKeyword[index]),
+            ),
+            itemCount: fav.filteredByKeyword.length,
+          ),
+        ),
+      ],
+    };
+  }
+
+  /// 收藏回顾的年份/月份选择与数据来源说明。
+  Widget _buildFavHeader(ThemeData theme, FavRecallController fav) {
+    final year = fav.selectedYear.value;
+    final lastMonth = year == DateTime.now().year ? DateTime.now().month : 12;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                '选择收藏年份',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                '$year 年收藏',
+                style: TextStyle(color: theme.colorScheme.primary),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              spacing: 8,
+              children: [
+                for (final y in fav.availableYears)
+                  SearchText(
+                    text: '$y',
+                    onTap: (_) => fav.selectYear(y),
+                    bgColor: year == y
+                        ? theme.colorScheme.secondaryContainer
+                        : null,
+                    textColor: year == y
+                        ? theme.colorScheme.onSecondaryContainer
+                        : null,
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              spacing: 8,
+              children: [
+                for (final m in [0, ...List.generate(lastMonth, (i) => i + 1)])
+                  SearchText(
+                    text: m == 0 ? '全年' : '$m月',
+                    onTap: (_) => fav.selectMonth(m),
+                    bgColor: fav.selectedMonth.value == m
+                        ? theme.colorScheme.secondaryContainer
+                        : null,
+                    textColor: fav.selectedMonth.value == m
+                        ? theme.colorScheme.onSecondaryContainer
+                        : null,
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '数据来源：B站收藏夹（全部收藏，仅统计普通视频）+ 本地归档'
+            '（共 ${fav.archiveCount} 条）。按收藏时间计算，与视频投稿年份无关；'
+            '词云反映该时段收藏内容的偏好。',
+            style: TextStyle(fontSize: 11, color: theme.colorScheme.outline),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 收藏回顾迷你统计卡。
+  Widget _buildFavStats(ThemeData theme, FavRecallController fav) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainerHighest.withValues(
+            alpha: 0.45,
+          ),
+          borderRadius: Style.mdRadius,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          spacing: 8,
+          children: [
+            Text(
+              '${fav.selectedYear.value} · 我的收藏回顾',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            Text(
+              '${fav.selectedMonth.value == 0 ? '全年' : '${fav.selectedMonth.value}月'}'
+              '共收藏 ${fav.totalCount} 条 · 内容总时长 ${fav.totalDurationText}',
+              style: TextStyle(color: theme.colorScheme.onSurface),
+            ),
+            if (fav.topUp.isNotEmpty)
+              Text(
+                '最常收藏 UP：${fav.topUp}',
+                style: TextStyle(color: theme.colorScheme.onSurface),
+              ),
           ],
         ),
       ),

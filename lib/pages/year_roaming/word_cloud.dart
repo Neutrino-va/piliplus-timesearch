@@ -318,7 +318,8 @@ class WordCloudCard extends StatelessWidget {
               for (final entry in words.asMap().entries)
                 _WordChip(
                   word: entry.value,
-                  fontSize: 22.0 -
+                  fontSize:
+                      22.0 -
                       ((entry.key / words.length) * 10).round().toDouble(),
                   selected: currentFilter == entry.value.text,
                   colorScheme: colorScheme,
