@@ -33,6 +33,11 @@ class FavRecallController extends GetxController {
   final RxString keywordFilter = ''.obs;
   final RxString progress = ''.obs;
 
+  /// 同步进度(0~1)与页数统计,驱动 UI 进度条。
+  final RxDouble progressValue = 0.0.obs;
+  final RxInt totalPages = 0.obs;
+  final RxInt pagesDone = 0.obs;
+
   bool _refreshing = false;
   List<HistoryItemModel> _all = const [];
 
@@ -90,26 +95,45 @@ class FavRecallController extends GetxController {
       final merged = {
         for (final item in _all) 'fav_${item.history.oid}': item,
       };
-      // 上次同步时各夹的 media_count 快照:数量未变的空夹跳过重扫
+      // 上次同步时各夹的 media_count 快照:数量未变的夹跳过重扫,
+      // 仅重扫有增删的夹,大幅降低日常打开时的请求量。
       final Map<String, int> lastMeta = _loadFolderMeta();
       final Map<String, int> newMeta = {};
+      final walkFolders = <FavFolderInfo>[];
+      var totalPagesCalc = 0;
+      for (final folder in folders) {
+        final fid = folder.id;
+        if (fid == null) continue;
+        final expected = folder.mediaCount ?? 0;
+        newMeta['$fid'] = expected;
+        if (lastMeta.containsKey('$fid') && lastMeta['$fid'] == expected) {
+          continue;
+        }
+        walkFolders.add(folder);
+        totalPagesCalc += (expected / 20).ceil();
+      }
+      totalPages.value = totalPagesCalc;
+      pagesDone.value = 0;
+      progressValue.value = totalPagesCalc == 0 ? 1.0 : 0.0;
+      if (totalPagesCalc == 0) {
+        // 所有收藏夹均无变化,直接使用本地归档
+        progress.value = '收藏无变化';
+        _recomputeYears();
+        _apply();
+        return;
+      }
 
       int collected = 0;
       // 逐夹聚合:实测 type=1(全部收藏聚合查询)对部分账号返回
       // 11010「您访问的内容不存在」,只有逐夹 type=0 可靠。
-      for (final folder in folders) {
-        final fid = folder.id;
-        if (fid == null) continue;
+      for (final folder in walkFolders) {
         final title = folder.title ?? '收藏夹';
-        final expected = folder.mediaCount ?? 0;
-        newMeta['$fid'] = expected;
-        if (expected == 0 && lastMeta['$fid'] == 0) continue;
-
         int pn = 1;
         while (true) {
-          progress.value = '同步「$title」 第$pn页（已收集 $collected 条）';
+          final percent = (pagesDone.value / totalPages.value * 100).round();
+          progress.value = '同步「$title」 第$pn页 · 已收集 $collected 条 · $percent%';
           final res = await FavHttp.userFavFolderDetail(
-            mediaId: fid,
+            mediaId: folder.id!,
             pn: pn,
             ps: 20,
             type: 0,
@@ -123,19 +147,35 @@ class FavRecallController extends GetxController {
                 final itemKey = 'fav_${media.id}';
                 if (!merged.containsKey(itemKey)) collected++;
                 merged[itemKey] = converted;
-                GStorage.favArchive.put(itemKey, jsonEncode(converted.toJson()));
+                GStorage.favArchive.put(
+                  itemKey,
+                  jsonEncode(converted.toJson()),
+                );
               }
             }
+            pagesDone.value++;
+            progressValue.value = (pagesDone.value / totalPages.value).clamp(
+              0.0,
+              1.0,
+            );
             if (response.hasMore != true) break;
             pn++;
-            await Future.delayed(const Duration(milliseconds: 60));
+            // 页间限速:降低触发风控的概率
+            await Future.delayed(const Duration(milliseconds: 250));
           } else {
             // 单个夹失败(如私密夹):跳过该夹继续其余
             SmartDialog.showToast('「$title」同步失败，已跳过');
+            pagesDone.value +=
+                ((folder.mediaCount ?? 0) / 20).ceil() - (pn - 1);
+            progressValue.value = (pagesDone.value / totalPages.value).clamp(
+              0.0,
+              1.0,
+            );
             break;
           }
         }
       }
+      progressValue.value = 1.0;
       GStorage.favArchive.put('folderMeta', jsonEncode(newMeta));
       _all = merged.values.toList()
         ..sort((a, b) => (b.viewAt ?? 0).compareTo(a.viewAt ?? 0));

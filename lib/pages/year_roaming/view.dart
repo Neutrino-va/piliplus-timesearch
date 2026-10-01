@@ -367,22 +367,72 @@ class _YearRoamingPageState extends State<YearRoamingPage>
       Loading() => [
         SliverToBoxAdapter(
           child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 60),
+            padding: const EdgeInsets.fromLTRB(24, 60, 24, 60),
             child: Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Center(child: CircularProgressIndicator()),
+                Text(
+                  '正在同步收藏数据…',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: fav.progressValue.value,
+                    minHeight: 8,
+                    backgroundColor: theme.colorScheme.onSurface.withValues(
+                      alpha: 0.06,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Text(
+                      fav.totalPages.value > 0
+                          ? '${fav.pagesDone.value}/${fav.totalPages.value} 页'
+                          : '正在获取收藏夹…',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: theme.colorScheme.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      '${(fav.progressValue.value * 100).round()}%',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: theme.colorScheme.primary,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
                 if (fav.progress.value.isNotEmpty)
                   Padding(
-                    padding: const EdgeInsets.only(top: 12),
+                    padding: const EdgeInsets.only(top: 8),
                     child: Text(
                       fav.progress.value,
                       style: TextStyle(
-                        fontSize: 12,
+                        fontSize: 11,
                         color: theme.colorScheme.outline,
                       ),
                     ),
                   ),
+                const SizedBox(height: 8),
+                Text(
+                  '首次全量同步约需一分钟（每页限速以防风控），'
+                  '之后仅在收藏变化时增量拉取。',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: theme.colorScheme.outline,
+                  ),
+                ),
               ],
             ),
           ),
