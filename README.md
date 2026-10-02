@@ -63,6 +63,12 @@
 - [x] Pad
 - [x] Windows
 - [x] Linux
+- [ ] HarmonyOS NEXT（暂不支持）
+
+> **鸿蒙设备兼容性**：HarmonyOS 4.x 及以下设备可直接安装本项目的 Android APK（系统兼容层运行）。
+> HarmonyOS NEXT（5.x 纯血鸿蒙）暂不支持——移植可行性已完成评估（详见
+> [docs/ohos-porting-assessment.md](./docs/ohos-porting-assessment.md)：media_kit 鸿蒙适配版与 SDK 版本鸿沟分析、
+> POC 路线图），待 OHOS Flutter 分支跟进新版 Flutter 后再评估投入。
 
 [![Packaging status](https://repology.org/badge/vertical-allrepos/piliplus.svg)](https://repology.org/project/piliplus/versions)
 
