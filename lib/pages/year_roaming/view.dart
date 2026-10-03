@@ -68,7 +68,10 @@ class _YearRoamingPageState extends State<YearRoamingPage>
   void _scrollToSection(GlobalKey key) {
     final ctx = key.currentContext;
     if (ctx != null) {
-      Scrollable.ensureVisible(ctx, duration: const Duration(milliseconds: 400));
+      Scrollable.ensureVisible(
+        ctx,
+        duration: const Duration(milliseconds: 400),
+      );
     } else {
       _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
     }
@@ -78,7 +81,10 @@ class _YearRoamingPageState extends State<YearRoamingPage>
   void _scrollToListHeader() {
     final ctx = _listHeaderKey.currentContext;
     if (ctx != null) {
-      Scrollable.ensureVisible(ctx, duration: const Duration(milliseconds: 400));
+      Scrollable.ensureVisible(
+        ctx,
+        duration: const Duration(milliseconds: 400),
+      );
     } else {
       _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
     }
@@ -188,13 +194,13 @@ class _YearRoamingPageState extends State<YearRoamingPage>
                     },
                   ).buildSlivers(context),
                   null => [
-                      SliverToBoxAdapter(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 60),
-                          child: Center(child: CircularProgressIndicator()),
-                        ),
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 60),
+                        child: Center(child: CircularProgressIndicator()),
                       ),
-                    ],
+                    ),
+                  ],
                 }
               else if (_controller.pageMode.value == 2)
                 ...switch (_fav) {
@@ -203,13 +209,13 @@ class _YearRoamingPageState extends State<YearRoamingPage>
                     favController,
                   ),
                   null => [
-                      SliverToBoxAdapter(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 60),
-                          child: Center(child: CircularProgressIndicator()),
-                        ),
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 60),
+                        child: Center(child: CircularProgressIndicator()),
                       ),
-                    ],
+                    ),
+                  ],
                 }
               else if (_recall case final recallController?) ...[
                 ...YearRecallView.buildSlivers(theme, recallController, _feed),
@@ -319,18 +325,12 @@ class _YearRoamingPageState extends State<YearRoamingPage>
               Expanded(
                 child: _DateRangeButton(
                   date: rangeStart,
-                  label: '开始日期',
-                  enabled: _controller.isCustomRange,
-                  onTap: () => _pickDate(isStart: true),
-                ),
-              ),
-              Text('至', style: TextStyle(color: theme.colorScheme.outline)),
-              Expanded(
-                child: _DateRangeButton(
-                  date: rangeEnd,
-                  label: '结束日期',
-                  enabled: _controller.isCustomRange,
-                  onTap: () => _pickDate(isStart: false),
+                  label: '选择时间段',
+                  subLabel:
+                      '${DateFormatUtils.longFormat.format(rangeStart)} 至 '
+                      '${DateFormatUtils.longFormat.format(rangeEnd)}',
+                  enabled: true,
+                  onTap: _pickDateRange,
                 ),
               ),
             ],
@@ -351,25 +351,21 @@ class _YearRoamingPageState extends State<YearRoamingPage>
     );
   }
 
-  Future<void> _pickDate({required bool isStart}) async {
+  /// 区间日历弹窗:一次点选起止日期(与现有日期选择表同源交互)。
+  Future<void> _pickDateRange() async {
     final start = _controller.rangeStart.value;
     final end = _controller.rangeEnd.value;
-    final picked = await showDatePicker(
+    final picked = await showDateRangePicker(
       context: context,
-      initialDate: isStart ? start : end,
-      firstDate: isStart ? _controller.pickerFirstDate : start,
-      lastDate: isStart ? end : _controller.latestDate,
-      helpText: isStart ? '选择开始日期' : '选择结束日期',
+      initialDateRange: DateTimeRange(start: start, end: end),
+      firstDate: _controller.pickerFirstDate,
+      lastDate: _controller.latestDate,
+      helpText: '选择时间段（先点起始日，再点结束日）',
       cancelText: '取消',
-      confirmText: '确定',
+      saveText: '确定',
     );
     if (picked == null || !mounted) return;
-
-    if (isStart) {
-      _controller.selectRange(picked, end);
-    } else {
-      _controller.selectRange(start, picked);
-    }
+    _controller.selectRange(picked.start, picked.end);
   }
 
   SliverToBoxAdapter _buildLoading(ThemeData theme) {
@@ -1321,12 +1317,16 @@ class _DateRangeButton extends StatelessWidget {
     required this.label,
     required this.enabled,
     required this.onTap,
+    this.subLabel,
   });
 
   final DateTime date;
   final String label;
   final bool enabled;
   final VoidCallback onTap;
+
+  /// 可选副标题(当前区间摘要),显示在日期行下方。
+  final String? subLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -1365,6 +1365,18 @@ class _DateRangeButton extends StatelessWidget {
                   fontWeight: FontWeight.w600,
                 ),
               ),
+              if (subLabel != null)
+                Text(
+                  subLabel!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: enabled
+                        ? theme.colorScheme.onSecondaryContainer
+                        : theme.colorScheme.onSurface,
+                  ),
+                ),
             ],
           ),
         ),
