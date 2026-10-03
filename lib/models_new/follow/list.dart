@@ -6,6 +6,9 @@ class FollowItemModel extends UpItem {
   String? sign;
   BaseOfficialVerify? officialVerify;
 
+  /// 关注时间(unix 秒),接口 /x/relation/followings 每条自带
+  int? mtime;
+
   FollowItemModel({
     required super.mid,
     this.attribute,
@@ -13,6 +16,7 @@ class FollowItemModel extends UpItem {
     super.face,
     this.sign,
     this.officialVerify,
+    this.mtime,
   });
 
   factory FollowItemModel.fromJson(Map<String, dynamic> json) =>
@@ -27,5 +31,6 @@ class FollowItemModel extends UpItem {
             : BaseOfficialVerify.fromJson(
                 json['official_verify'] as Map<String, dynamic>,
               ),
+        mtime: json['mtime'] as int?,
       );
 }

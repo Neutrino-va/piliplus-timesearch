@@ -17,6 +17,8 @@ import 'package:PiliPlus/pages/year_recall/feed_controller.dart';
 import 'package:PiliPlus/pages/year_recall/view.dart';
 import 'package:PiliPlus/pages/year_roaming/controller.dart';
 import 'package:PiliPlus/pages/year_roaming/fav_recall.dart';
+import 'package:PiliPlus/pages/year_roaming/follow_recall.dart';
+import 'package:PiliPlus/pages/year_roaming/heatmap_card.dart';
 import 'package:PiliPlus/pages/year_roaming/my_likes_rank.dart';
 import 'package:PiliPlus/pages/year_roaming/word_cloud.dart';
 import 'package:PiliPlus/utils/date_utils.dart';
@@ -52,6 +54,36 @@ class _YearRoamingPageState extends State<YearRoamingPage>
   /// 「收藏回顾」控制器懒创建。
   FavRecallController? _favController;
 
+  /// 「关注回顾」控制器懒创建。
+  FollowRecallController? _followController;
+
+  /// 功能目录定位用 GlobalKey(概览/热力/分区/词云/获赞/列表)。
+  final GlobalKey _summaryKey = GlobalKey();
+  final GlobalKey _heatmapKey = GlobalKey();
+  final GlobalKey _zoneKey = GlobalKey();
+  final GlobalKey _cloudKey = GlobalKey();
+  final GlobalKey _likesKey = GlobalKey();
+  final GlobalKey _listHeaderKey = GlobalKey();
+
+  void _scrollToSection(GlobalKey key) {
+    final ctx = key.currentContext;
+    if (ctx != null) {
+      Scrollable.ensureVisible(ctx, duration: const Duration(milliseconds: 400));
+    } else {
+      _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+    }
+  }
+
+  /// 词云点击筛选后,自动滚到观看列表顶部。
+  void _scrollToListHeader() {
+    final ctx = _listHeaderKey.currentContext;
+    if (ctx != null) {
+      Scrollable.ensureVisible(ctx, duration: const Duration(milliseconds: 400));
+    } else {
+      _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+    }
+  }
+
   YearRecallController? get _recall {
     if (_controller.pageMode.value != 1) return null;
     // putOrFind 与其他入口共享实例，避免重复创建。
@@ -83,6 +115,15 @@ class _YearRoamingPageState extends State<YearRoamingPage>
     return controller;
   }
 
+  FollowRecallController? get _follow {
+    if (_controller.pageMode.value != 3) return null;
+    final controller = _followController ??=
+        Get.putOrFind<FollowRecallController>(
+          FollowRecallController.new,
+        );
+    return controller;
+  }
+
   void _setPageMode(int mode) {
     if (_controller.pageMode.value == mode) return;
     _controller.pageMode.value = mode;
@@ -94,6 +135,11 @@ class _YearRoamingPageState extends State<YearRoamingPage>
     if (mode == 2) {
       _favController ??= Get.putOrFind<FavRecallController>(
         FavRecallController.new,
+      );
+    }
+    if (mode == 3) {
+      _followController ??= Get.putOrFind<FollowRecallController>(
+        FollowRecallController.new,
       );
     }
     _scrollController.jumpTo(0);
@@ -132,20 +178,38 @@ class _YearRoamingPageState extends State<YearRoamingPage>
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: [
               SliverToBoxAdapter(child: _buildModeSwitch(theme)),
-              if (_controller.pageMode.value == 2)
+              if (_controller.pageMode.value == 3)
+                ...switch (_follow) {
+                  final followController? => FollowRecallView(
+                    controller: followController,
+                    onToggleFilter: (word) {
+                      followController.toggleKeywordFilter(word);
+                      _scrollToListHeader();
+                    },
+                  ).buildSlivers(context),
+                  null => [
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 60),
+                          child: Center(child: CircularProgressIndicator()),
+                        ),
+                      ),
+                    ],
+                }
+              else if (_controller.pageMode.value == 2)
                 ...switch (_fav) {
                   final favController? => _buildFavSection(
                     theme,
                     favController,
                   ),
                   null => [
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 60),
-                        child: Center(child: CircularProgressIndicator()),
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 60),
+                          child: Center(child: CircularProgressIndicator()),
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
                 }
               else if (_recall case final recallController?) ...[
                 ...YearRecallView.buildSlivers(theme, recallController, _feed),
@@ -194,6 +258,7 @@ class _YearRoamingPageState extends State<YearRoamingPage>
           chip('我的回顾', 0),
           chip('年份回顾', 1),
           chip('收藏回顾', 2),
+          chip('关注回顾', 3),
         ],
       ),
     );
@@ -680,6 +745,11 @@ class _YearRoamingPageState extends State<YearRoamingPage>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          KeyedSubtree(
+            key: _summaryKey,
+            child: _buildDirectoryCard(theme, records.length),
+          ),
+          const SizedBox(height: 10),
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(16),
@@ -758,22 +828,47 @@ class _YearRoamingPageState extends State<YearRoamingPage>
             _buildHighlight(theme, highlight),
           ],
           const SizedBox(height: 12),
-          _buildZoneStats(theme, records.length),
-          const SizedBox(height: 12),
-          WordCloudCard(
-            colorScheme: theme.colorScheme,
-            records: records,
-            searchTerms: _controller.searchTerms,
-            currentFilter: _controller.keywordFilter.value,
-            onToggle: _controller.toggleKeywordFilter,
+          KeyedSubtree(
+            key: _heatmapKey,
+            child: HeatmapCard(
+              colorScheme: theme.colorScheme,
+              watchCounts: _watchHeatmapData(records),
+              favCounts: _favHeatmapData(),
+              year: _controller.rangeStart.value.year,
+            ),
           ),
           const SizedBox(height: 12),
-          MyLikesRankCard(colorScheme: theme.colorScheme),
+          KeyedSubtree(
+            key: _zoneKey,
+            child: _buildZoneStats(theme, records.length),
+          ),
           const SizedBox(height: 12),
-          Text(
-            '这一年的观看内容',
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.bold,
+          KeyedSubtree(
+            key: _cloudKey,
+            child: WordCloudCard(
+              colorScheme: theme.colorScheme,
+              records: records,
+              searchTerms: _controller.searchTerms,
+              currentFilter: _controller.keywordFilter.value,
+              onToggle: (word) {
+                _controller.toggleKeywordFilter(word);
+                _scrollToListHeader();
+              },
+            ),
+          ),
+          const SizedBox(height: 12),
+          KeyedSubtree(
+            key: _likesKey,
+            child: MyLikesRankCard(colorScheme: theme.colorScheme),
+          ),
+          const SizedBox(height: 12),
+          KeyedSubtree(
+            key: _listHeaderKey,
+            child: Text(
+              '这一年的观看内容',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
         ],
@@ -784,6 +879,112 @@ class _YearRoamingPageState extends State<YearRoamingPage>
   /// 分区统计（小黑盒游戏时长统计风格）：
   /// 每个分区一行——名称、按观看时长占比绘制的横条、总时长与条数，
   /// 以及该分区观看时长最长的视频。统计范围跟随当前选择的区间（全年/单月）。
+  /// 热力图·观看数据:当年每日观看次数(viewAt 秒级 → yyyyMMdd)。
+  Map<int, int> _watchHeatmapData(List<HistoryItemModel> records) {
+    final year = _controller.rangeStart.value.year;
+    final map = <int, int>{};
+    for (final item in records) {
+      final viewAt = item.viewAt;
+      if (viewAt == null) continue;
+      final date = DateTime.fromMillisecondsSinceEpoch(viewAt * 1000);
+      if (date.year != year) continue;
+      final key = date.year * 10000 + date.month * 100 + date.day;
+      map[key] = (map[key] ?? 0) + 1;
+    }
+    return map;
+  }
+
+  /// 热力图·收藏数据:当年每日收藏次数(来自收藏归档)。
+  Map<int, int> _favHeatmapData() {
+    final year = _controller.rangeStart.value.year;
+    final map = <int, int>{};
+    for (final item in FavRecallController.loadFavArchiveItems()) {
+      final viewAt = item.viewAt;
+      if (viewAt == null) continue;
+      final date = DateTime.fromMillisecondsSinceEpoch(viewAt * 1000);
+      if (date.year != year) continue;
+      final key = date.year * 10000 + date.month * 100 + date.day;
+      map[key] = (map[key] ?? 0) + 1;
+    }
+    return map;
+  }
+
+  /// 功能目录卡(二级菜单):点击滚动定位到对应板块。
+  Widget _buildDirectoryCard(ThemeData theme, int recordCount) {
+    final colorScheme = theme.colorScheme;
+    final entries = [
+      (Icons.emoji_events_outlined, '概览总结', _summaryKey),
+      (Icons.local_fire_department_outlined, '活跃热力图', _heatmapKey),
+      (Icons.donut_large_outlined, '分区统计', _zoneKey),
+      (Icons.cloud_outlined, '偏好词云', _cloudKey),
+      (Icons.thumb_up_alt_outlined, '获赞排行', _likesKey),
+      (Icons.video_library_outlined, '观看列表', _listHeaderKey),
+    ];
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.45),
+        borderRadius: Style.mdRadius,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        spacing: 10,
+        children: [
+          Row(
+            children: [
+              Text(
+                '功能目录',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                '点击直达 · 基于 $recordCount 条记录',
+                style: TextStyle(fontSize: 11, color: colorScheme.outline),
+              ),
+            ],
+          ),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final entry in entries)
+                GestureDetector(
+                  onTap: () => _scrollToSection(entry.$3),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 7,
+                    ),
+                    decoration: BoxDecoration(
+                      color: colorScheme.onSurface.withValues(alpha: 0.06),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      spacing: 6,
+                      children: [
+                        Icon(entry.$1, size: 15, color: colorScheme.primary),
+                        Text(
+                          entry.$2,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: colorScheme.onSurface,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildZoneStats(ThemeData theme, int recordCount) {
     final stats = _controller.zoneStats;
     if (stats.isEmpty) return const SizedBox.shrink();

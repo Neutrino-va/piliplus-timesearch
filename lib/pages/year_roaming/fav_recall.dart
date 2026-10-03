@@ -53,6 +53,11 @@ class FavRecallController extends GetxController {
   }
 
   void _loadFromArchive() {
+    _all = loadFavArchiveItems();
+  }
+
+  /// 读取 favArchive 归档的全部收藏条目(热力图等场景静态复用)。
+  static List<HistoryItemModel> loadFavArchiveItems() {
     final list = <HistoryItemModel>[];
     for (final key in GStorage.favArchive.keys) {
       if (!(key as String).startsWith('fav_')) continue; // 跳过 folderMeta
@@ -67,7 +72,7 @@ class FavRecallController extends GetxController {
       }
     }
     list.sort((a, b) => (b.viewAt ?? 0).compareTo(a.viewAt ?? 0));
-    _all = list;
+    return list;
   }
 
   Future<void> refreshData() async {
