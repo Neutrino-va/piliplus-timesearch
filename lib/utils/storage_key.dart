@@ -181,6 +181,12 @@ abstract final class SettingBoxKey {
       webdavPassword = 'webdavPassword',
       webdavDirectory = 'webdavDirectory';
 
+  // AI 总结(用户自带 Key,OpenAI 兼容 / Anthropic)
+  static const String aiApiType = 'aiApiType',
+      aiBaseUrl = 'aiBaseUrl',
+      aiApiKey = 'aiApiKey',
+      aiModel = 'aiModel';
+
   static const String enableSponsorBlock = 'enableSponsorBlock',
       blockSettings = 'blockSettings',
       blockLimit = 'blockLimit',

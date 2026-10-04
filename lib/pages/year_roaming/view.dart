@@ -17,6 +17,7 @@ import 'package:PiliPlus/pages/year_recall/feed_controller.dart';
 import 'package:PiliPlus/pages/year_recall/view.dart';
 import 'package:PiliPlus/pages/year_roaming/controller.dart';
 import 'package:PiliPlus/pages/year_roaming/fav_recall.dart';
+import 'package:PiliPlus/pages/year_roaming/ai_summary.dart';
 import 'package:PiliPlus/pages/year_roaming/follow_recall.dart';
 import 'package:PiliPlus/pages/year_roaming/heatmap_card.dart';
 import 'package:PiliPlus/pages/year_roaming/my_likes_rank.dart';
@@ -325,12 +326,18 @@ class _YearRoamingPageState extends State<YearRoamingPage>
               Expanded(
                 child: _DateRangeButton(
                   date: rangeStart,
-                  label: '选择时间段',
-                  subLabel:
-                      '${DateFormatUtils.longFormat.format(rangeStart)} 至 '
-                      '${DateFormatUtils.longFormat.format(rangeEnd)}',
+                  label: '开始日期',
                   enabled: true,
-                  onTap: _pickDateRange,
+                  onTap: () => _pickDate(isStart: true),
+                ),
+              ),
+              Text('至', style: TextStyle(color: theme.colorScheme.outline)),
+              Expanded(
+                child: _DateRangeButton(
+                  date: rangeEnd,
+                  label: '结束日期',
+                  enabled: true,
+                  onTap: () => _pickDate(isStart: false),
                 ),
               ),
             ],
@@ -351,21 +358,25 @@ class _YearRoamingPageState extends State<YearRoamingPage>
     );
   }
 
-  /// 区间日历弹窗:一次点选起止日期(与现有日期选择表同源交互)。
-  Future<void> _pickDateRange() async {
+  /// 单日日历弹窗(开始/结束分开选择,可翻月/切换年份)。
+  Future<void> _pickDate({required bool isStart}) async {
     final start = _controller.rangeStart.value;
     final end = _controller.rangeEnd.value;
-    final picked = await showDateRangePicker(
+    final picked = await showDatePicker(
       context: context,
-      initialDateRange: DateTimeRange(start: start, end: end),
-      firstDate: _controller.pickerFirstDate,
-      lastDate: _controller.latestDate,
-      helpText: '选择时间段（先点起始日，再点结束日）',
+      initialDate: isStart ? start : end,
+      firstDate: isStart ? _controller.pickerFirstDate : start,
+      lastDate: isStart ? end : _controller.latestDate,
+      helpText: isStart ? '选择开始日期' : '选择结束日期',
       cancelText: '取消',
-      saveText: '确定',
+      confirmText: '确定',
     );
     if (picked == null || !mounted) return;
-    _controller.selectRange(picked.start, picked.end);
+    if (isStart) {
+      _controller.selectRange(picked, end);
+    } else {
+      _controller.selectRange(start, picked);
+    }
   }
 
   SliverToBoxAdapter _buildLoading(ThemeData theme) {
@@ -620,6 +631,29 @@ class _YearRoamingPageState extends State<YearRoamingPage>
               ],
             ),
           ),
+          const SizedBox(height: 8),
+          Row(
+            spacing: 8,
+            children: [
+              Expanded(
+                child: _DateRangeButton(
+                  date: fav.buttonStartDate,
+                  label: '开始日期',
+                  enabled: true,
+                  onTap: () => fav.pickCustomDate(isStart: true),
+                ),
+              ),
+              Text('至', style: TextStyle(color: theme.colorScheme.outline)),
+              Expanded(
+                child: _DateRangeButton(
+                  date: fav.buttonEndDate,
+                  label: '结束日期',
+                  enabled: true,
+                  onTap: () => fav.pickCustomDate(isStart: false),
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 4),
           Text(
             '数据来源：B站收藏夹（全部收藏，仅统计普通视频）+ 本地归档'
@@ -649,11 +683,35 @@ class _YearRoamingPageState extends State<YearRoamingPage>
           crossAxisAlignment: CrossAxisAlignment.start,
           spacing: 8,
           children: [
-            Text(
-              '${fav.selectedYear.value} · 我的收藏回顾',
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Text(
+                    '${fav.selectedYear.value} · 我的收藏回顾',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                AiSummaryButton(
+                  title: '收藏回顾',
+                  promptBuilder: () {
+                    final titles = fav.filtered
+                        .take(30)
+                        .map((item) => item.title ?? '')
+                        .where((t) => t.isNotEmpty)
+                        .join(';');
+                    return '我的B站收藏回顾数据如下(按收藏时间,'
+                        '${fav.selectedYear.value}年'
+                        '${fav.selectedMonth.value == 0 ? '全年' : '${fav.selectedMonth.value}月'}):\n'
+                        '- 共收藏 ${fav.totalCount} 条,内容总时长 ${fav.totalDurationText}\n'
+                        '- 最常收藏 UP:${fav.topUp.isEmpty ? '无' : fav.topUp}\n'
+                        '- 收藏标题样本:$titles\n'
+                        '请总结我这一时段的收藏风格和内容偏好。';
+                  },
+                ),
+              ],
             ),
             Text(
               '${fav.selectedMonth.value == 0 ? '全年' : '${fav.selectedMonth.value}月'}'
@@ -761,12 +819,23 @@ class _YearRoamingPageState extends State<YearRoamingPage>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  '${_controller.selectedYear.value} · 我的年度回顾',
-                  style: theme.textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: theme.colorScheme.onPrimaryContainer,
-                  ),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '${_controller.selectedYear.value} · 我的年度回顾',
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: theme.colorScheme.onPrimaryContainer,
+                        ),
+                      ),
+                    ),
+                    AiSummaryButton(
+                      title: '我的回顾',
+                      promptBuilder: () => _buildAiPrompt(records),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 6),
                 Text(
@@ -875,6 +944,39 @@ class _YearRoamingPageState extends State<YearRoamingPage>
   /// 分区统计（小黑盒游戏时长统计风格）：
   /// 每个分区一行——名称、按观看时长占比绘制的横条、总时长与条数，
   /// 以及该分区观看时长最长的视频。统计范围跟随当前选择的区间（全年/单月）。
+  /// 构建我的回顾 AI 总结 prompt(统计摘要 + 高频词,不含完整历史)。
+  String _buildAiPrompt(List<HistoryItemModel> records) {
+    final zones = _controller.zoneStats
+        .take(3)
+        .map((s) => '${s.name} ${s.count} 条')
+        .join('、');
+    final ups = <String, int>{};
+    for (final item in records) {
+      final name = item.authorName;
+      if (name != null && name.isNotEmpty) {
+        ups[name] = (ups[name] ?? 0) + 1;
+      }
+    }
+    final topUps = ups.entries
+        .toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+    final upText = topUps
+        .take(3)
+        .map((e) => '${e.key} ${e.value} 条')
+        .join('、');
+    final words = mineWords(records, const [])
+        .take(15)
+        .map((w) => w.text)
+        .join('、');
+    return '我的一段${_controller.rangeDescription}的B站观看回顾数据如下:\n'
+        '- 观看 ${records.length} 条,总时长约 ${_controller.formatWatchDuration()},'
+        '看完 ${_controller.completedCount.value} 条,仍在收藏 ${_controller.favoriteCount.value} 条\n'
+        '- 常看分区:$zones\n'
+        '- 常看UP主:$upText\n'
+        '- 标题高频词:$words\n'
+        '请总结我这段时期的观看风格和兴趣偏好。';
+  }
+
   /// 热力图·观看数据:当年每日观看次数(viewAt 秒级 → yyyyMMdd)。
   Map<int, int> _watchHeatmapData(List<HistoryItemModel> records) {
     final year = _controller.rangeStart.value.year;

@@ -289,6 +289,18 @@ abstract final class Pref {
   static String get banWordForReply =>
       _setting.get(SettingBoxKey.banWordForReply, defaultValue: '');
 
+  // AI 总结(OpenAI 兼容 / Anthropic)
+  static String get aiApiType =>
+      _setting.get(SettingBoxKey.aiApiType, defaultValue: 'openai');
+  static String get aiBaseUrl => _setting.get(
+    SettingBoxKey.aiBaseUrl,
+    defaultValue: 'https://api.openai.com/v1',
+  );
+  static String get aiApiKey =>
+      _setting.get(SettingBoxKey.aiApiKey, defaultValue: '');
+  static String get aiModel =>
+      _setting.get(SettingBoxKey.aiModel, defaultValue: '');
+
   static String get banWordForZone =>
       _setting.get(SettingBoxKey.banWordForZone, defaultValue: '');
 

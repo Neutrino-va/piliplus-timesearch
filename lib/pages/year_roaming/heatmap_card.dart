@@ -30,6 +30,9 @@ class _HeatmapCardState extends State<HeatmapCard> {
   /// 0=观看 1=收藏
   int _mode = 0;
 
+  /// 当前选中的格子(yyyyMMdd),点击高亮并在信息条显示日期,再点取消
+  int? _selectedKey;
+
   Map<int, int> get _counts =>
       _mode == 0 ? widget.watchCounts : widget.favCounts;
 
@@ -82,9 +85,26 @@ class _HeatmapCardState extends State<HeatmapCard> {
               _modeChip(context, '收藏', 1),
             ],
           ),
+          if (_selectedKey != null) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+              decoration: BoxDecoration(
+                color: colorScheme.primary.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                _selectedInfoText(),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: colorScheme.onSurface,
+                ),
+              ),
+            ),
+          ],
           Text(
             '${widget.year} 年 · 每格一天,颜色越深代表当日'
-            '${_mode == 0 ? '观看' : '收藏'}越多;点击格子查看当日明细。',
+            '${_mode == 0 ? '观看' : '收藏'}越多;点击格子显示日期与次数。',
             style: TextStyle(fontSize: 11, color: colorScheme.outline),
           ),
           // 月份标签行(与格子横向滚动对齐)
@@ -203,28 +223,40 @@ class _HeatmapCardState extends State<HeatmapCard> {
     _ => 4,
   };
 
+  String _selectedInfoText() {
+    final key = _selectedKey!;
+    final date = DateTime(key ~/ 10000, (key ~/ 100) % 100, key % 100);
+    final weekdays = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+    final weekday = weekdays[date.weekday - 1];
+    final count = _counts[key] ?? 0;
+    final action = _mode == 0 ? '观看' : '收藏';
+    return '已选:${date.year}-${date.month.toString().padLeft(2, '0')}-'
+        '${date.day.toString().padLeft(2, '0')}($weekday) · '
+        '当日$action $count 次';
+  }
+
   Widget _buildCell(BuildContext context, int dayOfYear) {
     final date = DateTime(widget.year, 1, 1 + dayOfYear);
     final key = date.year * 10000 + date.month * 100 + date.day;
     final count = _counts[key] ?? 0;
     final intensity = _intensityFor(count);
+    final selected = _selectedKey == key;
     return GestureDetector(
-      onTap: count > 0
-          ? () => ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  '${date.year}-${date.month.toString().padLeft(2, '0')}-'
-                  '${date.day.toString().padLeft(2, '0')}:'
-                  '${_mode == 0 ? '观看' : '收藏'} $count 次',
-                ),
-                duration: const Duration(milliseconds: 1500),
-              ),
-            )
+      onTap: count > 0 || selected
+          ? () => setState(() {
+              _selectedKey = selected ? null : key;
+            })
           : null,
       child: Container(
         decoration: BoxDecoration(
           color: _cellColor(context, intensity),
           borderRadius: BorderRadius.circular(3),
+          border: selected
+              ? Border.all(
+                  color: widget.colorScheme.onSurface.withValues(alpha: 0.7),
+                  width: 1.5,
+                )
+              : null,
         ),
       ),
     );

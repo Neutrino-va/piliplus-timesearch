@@ -3,6 +3,7 @@ import 'package:PiliPlus/http/loading_state.dart';
 import 'package:PiliPlus/models/model_avatar.dart';
 import 'package:PiliPlus/models_new/follow/list.dart';
 import 'package:PiliPlus/pages/search/widgets/search_text.dart';
+import 'package:PiliPlus/pages/year_roaming/ai_summary.dart';
 import 'package:PiliPlus/utils/accounts.dart';
 import 'package:PiliPlus/utils/date_utils.dart';
 import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
@@ -22,6 +23,10 @@ class FollowRecallController extends GetxController {
 
   /// 年份筛选:null = 显示全部分组
   final Rx<int?> selectedYear = Rx<int?>(null);
+
+  /// 自定义起止日期(日期按钮设置,优先于年份芯片)
+  final Rx<DateTime?> customStart = Rx<DateTime?>(null);
+  final Rx<DateTime?> customEnd = Rx<DateTime?>(null);
   final RxString progress = ''.obs;
   final RxString keywordFilter = ''.obs;
 
@@ -93,18 +98,26 @@ class FollowRecallController extends GetxController {
 
   List<MapEntry<int, List<FollowItemModel>>> _grouped() {
     final year = selectedYear.value;
-    final source = year == null
-        ? _all
-        : _all
-              .where(
-                (item) =>
-                    item.mtime != null &&
-                    DateTime.fromMillisecondsSinceEpoch(
-                          item.mtime! * 1000,
-                        ).year ==
-                        year,
-              )
-              .toList();
+    final cs = customStart.value;
+    final ce = customEnd.value;
+    Iterable<FollowItemModel> source = _all;
+    if (cs != null && ce != null) {
+      final start = DateTime(cs.year, cs.month, cs.day);
+      final end = DateTime(ce.year, ce.month, ce.day, 23, 59, 59);
+      source = _all.where((item) {
+        final mtime = item.mtime;
+        if (mtime == null) return false;
+        final date = DateTime.fromMillisecondsSinceEpoch(mtime * 1000);
+        return !date.isBefore(start) && !date.isAfter(end);
+      });
+    } else if (year != null) {
+      source = _all.where(
+        (item) =>
+            item.mtime != null &&
+            DateTime.fromMillisecondsSinceEpoch(item.mtime! * 1000).year ==
+                year,
+      );
+    }
     final map = <int, List<FollowItemModel>>{};
     for (final item in source) {
       final mtime = item.mtime;
@@ -138,6 +151,38 @@ class FollowRecallController extends GetxController {
 
   int get totalCount => _all.length;
 
+  /// 构建 AI 总结 prompt(统计 + 近期关注样本,不含敏感信息)。
+  String buildAiPrompt() {
+    final sample = _all.take(20).map((item) {
+      final mtime = item.mtime;
+      final date = mtime == null
+          ? ''
+          : '(${DateTime.fromMillisecondsSinceEpoch(mtime * 1000).year}年关注)';
+      final sign = item.sign?.isNotEmpty == true ? ':${item.sign}' : '';
+      return '${item.uname ?? ''}$date$sign';
+    }).join(';');
+    final perYear = <int, int>{};
+    for (final item in _all) {
+      final mtime = item.mtime;
+      if (mtime == null) continue;
+      final y = DateTime.fromMillisecondsSinceEpoch(mtime * 1000).year;
+      perYear[y] = (perYear[y] ?? 0) + 1;
+    }
+    final perYearText =
+        perYear.entries.toList()..sort((a, b) => b.key.compareTo(a.key));
+    final perYearStr = perYearText
+        .take(8)
+        .map((e) => '${e.key}年${e.value}人')
+        .join('、');
+    final yearNote = selectedYear.value != null
+        ? '- 当前筛选的 ${selectedYear.value} 年新增 $currentYearCount 人\n'
+        : '';
+    return '我的B站关注列表数据如下(共 ${_all.length} 人):\n'
+        '- 按关注年份:$perYearStr\n'
+        '$yearNote- 近期关注的样本:$sample\n'
+        '请总结我关注博主的风格和兴趣偏好(按时期归纳)。';
+  }
+
   /// 当前筛选年份的新增关注数(year==null 时返回总数)。
   int get currentYearCount {
     final year = selectedYear.value;
@@ -157,10 +202,56 @@ class FollowRecallController extends GetxController {
     return earliest;
   }
 
+  /// 日期按钮:设置自定义起止(两个都设后生效,按 mtime 范围过滤)。
+  Future<void> pickCustomDate({required bool isStart}) async {
+    final anchor = isStart ? buttonStartDate : buttonEndDate;
+    final picked = await showDatePicker(
+      context: Get.context!,
+      initialDate: anchor,
+      firstDate: earliestFollow ?? DateTime(2009, 6, 26),
+      lastDate: DateTime.now(),
+      helpText: isStart ? '选择开始日期' : '选择结束日期',
+      cancelText: '取消',
+      confirmText: '确定',
+    );
+    if (picked == null) return;
+    if (isStart) {
+      customStart.value = picked;
+      if (customEnd.value != null && customEnd.value!.isBefore(picked)) {
+        customEnd.value = picked;
+      }
+    } else {
+      customEnd.value = picked;
+      if (customStart.value != null && customStart.value!.isAfter(picked)) {
+        customStart.value = picked;
+      }
+    }
+    if (customStart.value != null && customEnd.value != null) {
+      selectedYear.value = null;
+      loadingState.value = Success(_sorted());
+    }
+  }
+
+  DateTime get buttonStartDate {
+    if (customStart.value != null) return customStart.value!;
+    return earliestFollow ?? DateTime.now();
+  }
+
+  DateTime get buttonEndDate {
+    if (customEnd.value != null) return customEnd.value!;
+    return DateTime.now();
+  }
+
   void selectYear(int? year) {
     if (selectedYear.value == year) return;
     selectedYear.value = year;
+    _clearCustom();
     loadingState.value = Success(_sorted());
+  }
+
+  void _clearCustom() {
+    customStart.value = null;
+    customEnd.value = null;
   }
 
   void toggleKeywordFilter(String word) =>
@@ -251,6 +342,11 @@ class FollowRecallView {
                     ),
                   ),
                   const Spacer(),
+                  AiSummaryButton(
+                    title: '关注回顾',
+                    promptBuilder: controller.buildAiPrompt,
+                  ),
+                  const SizedBox(width: 8),
                   Text(
                     '${controller.currentYearCount} 人',
                     style: TextStyle(color: colorScheme.primary),
@@ -286,6 +382,27 @@ class FollowRecallView {
                       ),
                   ],
                 ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                spacing: 8,
+                children: [
+                  Expanded(
+                    child: _DateButton(
+                      date: controller.buttonStartDate,
+                      label: '开始日期',
+                      onTap: () => controller.pickCustomDate(isStart: true),
+                    ),
+                  ),
+                  Text('至', style: TextStyle(color: colorScheme.outline)),
+                  Expanded(
+                    child: _DateButton(
+                      date: controller.buttonEndDate,
+                      label: '结束日期',
+                      onTap: () => controller.pickCustomDate(isStart: false),
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 4),
               Text(
@@ -440,6 +557,57 @@ class _FollowTile extends StatelessWidget {
             style: TextStyle(fontSize: 11, color: colorScheme.outline),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 关注回顾的日期按钮(简洁版,点击弹出单日日历)。
+class _DateButton extends StatelessWidget {
+  const _DateButton({
+    required this.date,
+    required this.label,
+    required this.onTap,
+  });
+
+  final DateTime date;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: colorScheme.onSurface.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.calendar_today_outlined,
+              size: 13,
+              color: colorScheme.primary,
+            ),
+            const SizedBox(width: 5),
+            Flexible(
+              child: Text(
+                '${DateFormatUtils.longFormat.format(date)}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: colorScheme.onSurface,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

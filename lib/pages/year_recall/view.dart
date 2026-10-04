@@ -8,6 +8,7 @@ import 'package:PiliPlus/models/search/result.dart';
 import 'package:PiliPlus/pages/search/widgets/search_text.dart';
 import 'package:PiliPlus/pages/year_recall/controller.dart';
 import 'package:PiliPlus/pages/year_recall/feed_controller.dart';
+import 'package:PiliPlus/pages/year_roaming/ai_summary.dart';
 import 'package:PiliPlus/utils/grid.dart';
 import 'package:get/get.dart';
 import 'package:material_ui/material_ui.dart';
@@ -126,6 +127,28 @@ abstract final class YearRecallView {
                   fontWeight: FontWeight.bold,
                 ),
               ),
+              const Spacer(),
+              AiSummaryButton(
+                title: '年份回顾',
+                promptBuilder: () {
+                  final items =
+                      controller.loadingState.value.dataOrNull ?? const [];
+                  final titles = items
+                      .take(40)
+                      .map((item) => item.title ?? '')
+                      .where((t) => t.isNotEmpty)
+                      .join(';');
+                  return '这是B站官方「每周必看」${controller.selectedYear.value}年'
+                      '各期的视频标题样本(共 ${items.length} 条,涵盖全站热门):\n'
+                      '$titles\n'
+                      '请总结这一年B站站内热门内容的整体风格、关键词和兴趣趋势。';
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
               const Spacer(),
               Text(
                 '${controller.selectedYear.value} 年'

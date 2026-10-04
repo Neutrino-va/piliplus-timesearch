@@ -11,6 +11,7 @@ import 'package:PiliPlus/utils/duration_utils.dart';
 import 'package:PiliPlus/utils/storage.dart';
 import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 import 'package:get/get.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// 「收藏回顾」:按收藏时间年份筛选用户全部收藏的视频,并生成偏好词云。
 ///
@@ -29,6 +30,10 @@ class FavRecallController extends GetxController {
 
   final RxInt selectedYear = DateTime.now().year.obs;
   final RxInt selectedMonth = 0.obs; // 0=全年,1-12=对应月份
+
+  /// 自定义起止日期(日期按钮设置,优先于年/月芯片)
+  final Rx<DateTime?> customStart = Rx<DateTime?>(null);
+  final Rx<DateTime?> customEnd = Rx<DateTime?>(null);
   final RxList<int> availableYears = <int>[].obs;
   final RxString keywordFilter = ''.obs;
   final RxString progress = ''.obs;
@@ -241,6 +246,19 @@ class FavRecallController extends GetxController {
 
   /// 当前区间(年份+月份)命中的收藏记录,按收藏时间倒序。
   List<HistoryItemModel> get filtered {
+    // 自定义起止日期(日期按钮)优先于年/月芯片
+    final cs = customStart.value;
+    final ce = customEnd.value;
+    if (cs != null && ce != null) {
+      final start = DateTime(cs.year, cs.month, cs.day);
+      final end = DateTime(ce.year, ce.month, ce.day, 23, 59, 59);
+      return _all.where((item) {
+        final viewAt = item.viewAt;
+        if (viewAt == null) return false;
+        final date = DateTime.fromMillisecondsSinceEpoch(viewAt * 1000);
+        return !date.isBefore(start) && !date.isAfter(end);
+      }).toList();
+    }
     final year = selectedYear.value;
     final month = selectedMonth.value;
     return _all.where((item) {
@@ -253,6 +271,82 @@ class FavRecallController extends GetxController {
     }).toList();
   }
 
+  /// 日期按钮设置的起止(未设置时显示当前年/月推导值)。
+  DateTime get buttonStartDate {
+    if (customStart.value != null) return customStart.value!;
+    final year = selectedYear.value;
+    final month = selectedMonth.value == 0 ? 1 : selectedMonth.value;
+    final derived = DateTime(year, month, 1);
+    return derived.isBefore(latestFavDate) ? derived : latestFavDate;
+  }
+
+  DateTime get buttonEndDate {
+    if (customEnd.value != null) return customEnd.value!;
+    final now = DateTime.now();
+    if (selectedYear.value == now.year) return now;
+    return DateTime(selectedYear.value, 12, 31);
+  }
+
+  DateTime get latestFavDate {
+    DateTime? latest;
+    for (final item in _all) {
+      final viewAt = item.viewAt;
+      if (viewAt == null) continue;
+      final date = DateTime.fromMillisecondsSinceEpoch(viewAt * 1000);
+      if (latest == null || date.isAfter(latest)) latest = date;
+    }
+    return latest ?? DateTime.now();
+  }
+
+  DateTime get earliestFavDate {
+    DateTime? earliest;
+    for (final item in _all) {
+      final viewAt = item.viewAt;
+      if (viewAt == null) continue;
+      final date = DateTime.fromMillisecondsSinceEpoch(viewAt * 1000);
+      if (earliest == null || date.isBefore(earliest)) earliest = date;
+    }
+    return earliest ?? DateTime(2009, 6, 26);
+  }
+
+  /// 日期按钮:设置自定义起止(分别选择,两个都设后才生效过滤)。
+  Future<void> pickCustomDate({required bool isStart}) async {
+    final other = isStart ? customEnd.value : customStart.value;
+    final anchor = isStart ? buttonStartDate : buttonEndDate;
+    final picked = await showDatePicker(
+      context: Get.context!,
+      initialDate: anchor,
+      firstDate: isStart ? earliestFavDate : earliestFavDate,
+      lastDate: isStart ? latestFavDate : latestFavDate,
+      helpText: isStart ? '选择开始日期' : '选择结束日期',
+      cancelText: '取消',
+      confirmText: '确定',
+    );
+    if (picked == null) return;
+    if (isStart) {
+      customStart.value = picked;
+      if (customEnd.value != null && customEnd.value!.isBefore(picked)) {
+        customEnd.value = picked;
+      }
+    } else {
+      customEnd.value = picked;
+      if (customStart.value != null && customStart.value!.isAfter(picked)) {
+        customStart.value = picked;
+      }
+    }
+    if (customStart.value != null && customEnd.value != null) {
+      selectedYear.value = customStart.value!.year;
+      selectedMonth.value = 0;
+      _apply();
+    }
+  }
+
+  /// 年/月芯片回到芯片口径,清除自定义区间。
+  void _clearCustom() {
+    customStart.value = null;
+    customEnd.value = null;
+  }
+
   void _apply() {
     loadingState.value = Success(filtered);
   }
@@ -261,12 +355,14 @@ class FavRecallController extends GetxController {
     if (selectedYear.value == year) return;
     selectedYear.value = year;
     selectedMonth.value = 0;
+    _clearCustom();
     _apply();
   }
 
   void selectMonth(int month) {
     if (selectedMonth.value == month) return;
     selectedMonth.value = month;
+    _clearCustom();
     _apply();
   }
 

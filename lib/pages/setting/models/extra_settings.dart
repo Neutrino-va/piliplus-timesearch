@@ -634,7 +634,118 @@ List<SettingsModel> get extraSettings => [
       }
     },
   ),
+  NormalModel(
+    title: 'AI 总结设置',
+    getSubtitle: () => Pref.aiApiKey.isEmpty
+        ? '未配置：填入 API Key 后可在年份回顾中使用 AI 总结'
+        : '已配置：${Pref.aiApiType == 'anthropic' ? 'Anthropic' : 'OpenAI 兼容'} · ${Pref.aiModel}',
+    leading: const Icon(Icons.auto_awesome_outlined),
+    onTap: _showAiConfigDialog,
+  ),
 ];
+
+Future<void> _showAiConfigDialog(
+  BuildContext context,
+  VoidCallback setState,
+) async {
+  final typeController = TextEditingController(text: Pref.aiApiType);
+  final baseController = TextEditingController(text: Pref.aiBaseUrl);
+  final keyController = TextEditingController(text: Pref.aiApiKey);
+  final modelController = TextEditingController(text: Pref.aiModel);
+
+  await showDialog(
+    context: context,
+    builder: (context) => StatefulBuilder(
+      builder: (context, setState) => AlertDialog(
+        title: const Text('AI 总结设置'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('接口类型'),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: ChoiceChip(
+                      label: const Text('OpenAI 兼容'),
+                      selected: typeController.text != 'anthropic',
+                      onSelected: (_) =>
+                          setState(() => typeController.text = 'openai'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ChoiceChip(
+                      label: const Text('Anthropic'),
+                      selected: typeController.text == 'anthropic',
+                      onSelected: (_) =>
+                          setState(() => typeController.text = 'anthropic'),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: baseController,
+                decoration: InputDecoration(
+                  labelText: 'Base URL',
+                  hintText: typeController.text == 'anthropic'
+                      ? 'https://api.anthropic.com'
+                      : 'https://api.openai.com/v1',
+                  border: const OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: keyController,
+                obscureText: true,
+                decoration: const InputDecoration(
+                  labelText: 'API Key',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: modelController,
+                decoration: const InputDecoration(
+                  labelText: '模型名',
+                  hintText: '如 deepseek-chat / glm-4-flash / claude-sonnet-4',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '仅保存在本机，用于「年份回顾」的 AI 总结；'
+                '使用时会把该时段的统计摘要发送至此接口。',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Theme.of(context).colorScheme.outline,
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: Get.back, child: const Text('取消')),
+          TextButton(
+            onPressed: () {
+              GStorage.setting
+                ..put(SettingBoxKey.aiApiType, typeController.text)
+                ..put(SettingBoxKey.aiBaseUrl, baseController.text.trim())
+                ..put(SettingBoxKey.aiApiKey, keyController.text.trim())
+                ..put(SettingBoxKey.aiModel, modelController.text.trim());
+              Get.back();
+              SmartDialog.showToast('已保存');
+            },
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    ),
+  );
+}
 
 Future<void> audioNormalization(
   BuildContext context,
