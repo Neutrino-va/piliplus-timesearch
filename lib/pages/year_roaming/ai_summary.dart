@@ -9,7 +9,7 @@ Future<void> showAiSummaryDialog(
   required String title,
   required String prompt,
 }) async {
-  if (!AiService.configured) {
+  if (!AiEndpoint.fromPrefs().configured) {
     SmartDialog.showToast('请先在 设置→其它设置→AI 总结设置 中配置接口');
     return;
   }

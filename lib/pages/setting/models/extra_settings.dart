@@ -11,6 +11,7 @@ import 'package:PiliPlus/common/widgets/image_grid/image_grid_view.dart'
     show ImageGridView, ImageModel;
 import 'package:PiliPlus/common/widgets/pendant_avatar.dart';
 import 'package:PiliPlus/grpc/reply.dart';
+import 'package:PiliPlus/http/ai.dart';
 import 'package:PiliPlus/http/fav.dart';
 import 'package:PiliPlus/http/loading_state.dart';
 import 'package:PiliPlus/models/common/audio_normalization.dart';
@@ -652,6 +653,60 @@ Future<void> _showAiConfigDialog(
   final baseController = TextEditingController(text: Pref.aiBaseUrl);
   final keyController = TextEditingController(text: Pref.aiApiKey);
   final modelController = TextEditingController(text: Pref.aiModel);
+  // 测试连接 / 模型列表状态(随对话框内当前填写值实时更新)
+  String? testResult;
+  bool? testOk;
+  bool testing = false;
+  bool fetchingModels = false;
+  List<String> modelList = const [];
+
+  void clearProbe() {
+    testResult = null;
+    testOk = null;
+    modelList = const [];
+  }
+
+  AiEndpoint endpointFromFields() => AiEndpoint(
+    apiType: typeController.text == 'anthropic' ? 'anthropic' : 'openai',
+    baseUrl: baseController.text.trim(),
+    apiKey: keyController.text.trim(),
+    model: modelController.text.trim(),
+  );
+
+  Future<void> doTest(void Function(void Function()) setState) async {
+    setState(() {
+      testing = true;
+      clearProbe();
+    });
+    final result = await AiService.testConnection(endpointFromFields());
+    setState(() {
+      testing = false;
+      testOk = result.ok;
+      testResult = result.ok
+          ? '✓ 连接成功 · 延迟 ${result.latencyMs}ms'
+          : '✕ ${result.error ?? '连接失败'}';
+    });
+  }
+
+  Future<void> doFetchModels(void Function(void Function()) setState) async {
+    setState(() {
+      fetchingModels = true;
+      clearProbe();
+    });
+    try {
+      final models = await AiService.fetchModels(endpointFromFields());
+      setState(() {
+        fetchingModels = false;
+        modelList = models;
+      });
+    } on AiServiceException catch (e) {
+      setState(() {
+        fetchingModels = false;
+        testOk = false;
+        testResult = '✕ ${e.message}';
+      });
+    }
+  }
 
   await showDialog(
     context: context,
@@ -671,8 +726,10 @@ Future<void> _showAiConfigDialog(
                     child: ChoiceChip(
                       label: const Text('OpenAI 兼容'),
                       selected: typeController.text != 'anthropic',
-                      onSelected: (_) =>
-                          setState(() => typeController.text = 'openai'),
+                      onSelected: (_) {
+                        setState(() => typeController.text = 'openai');
+                        clearProbe();
+                      },
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -680,8 +737,10 @@ Future<void> _showAiConfigDialog(
                     child: ChoiceChip(
                       label: const Text('Anthropic'),
                       selected: typeController.text == 'anthropic',
-                      onSelected: (_) =>
-                          setState(() => typeController.text = 'anthropic'),
+                      onSelected: (_) {
+                        setState(() => typeController.text = 'anthropic');
+                        clearProbe();
+                      },
                     ),
                   ),
                 ],
@@ -689,6 +748,7 @@ Future<void> _showAiConfigDialog(
               const SizedBox(height: 12),
               TextFormField(
                 controller: baseController,
+                onChanged: (_) => clearProbe(),
                 decoration: InputDecoration(
                   labelText: 'Base URL',
                   hintText: typeController.text == 'anthropic'
@@ -701,11 +761,65 @@ Future<void> _showAiConfigDialog(
               TextFormField(
                 controller: keyController,
                 obscureText: true,
+                onChanged: (_) => clearProbe(),
                 decoration: const InputDecoration(
                   labelText: 'API Key',
                   border: OutlineInputBorder(),
                 ),
               ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: testing || fetchingModels
+                          ? null
+                          : () => doTest(setState),
+                      icon: testing
+                          ? const SizedBox(
+                              width: 12,
+                              height: 12,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : const Icon(Icons.network_check, size: 16),
+                      label: const Text('测试连接'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: testing || fetchingModels
+                          ? null
+                          : () => doFetchModels(setState),
+                      icon: fetchingModels
+                          ? const SizedBox(
+                              width: 12,
+                              height: 12,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : const Icon(Icons.list_alt, size: 16),
+                      label: const Text('拉取模型'),
+                    ),
+                  ),
+                ],
+              ),
+              if (testResult != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    testResult!,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: testOk == true
+                          ? Theme.of(context).colorScheme.primary
+                          : Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                ),
               const SizedBox(height: 12),
               TextFormField(
                 controller: modelController,
@@ -715,6 +829,63 @@ Future<void> _showAiConfigDialog(
                   border: OutlineInputBorder(),
                 ),
               ),
+              if (modelList.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  '从接口拉取到 ${modelList.length} 个模型，点击选择：',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Theme.of(context).colorScheme.outline,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 160),
+                  child: SingleChildScrollView(
+                    child: Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        for (final model in modelList.take(60))
+                          GestureDetector(
+                            onTap: () => modelController.text = model,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 5,
+                              ),
+                              decoration: BoxDecoration(
+                                color: modelController.text == model
+                                    ? Theme.of(
+                                        context,
+                                      ).colorScheme.secondaryContainer
+                                    : Theme.of(
+                                        context,
+                                      ).colorScheme.onSurface.withValues(
+                                        alpha: 0.06,
+                                      ),
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              child: Text(
+                                model,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: modelController.text == model
+                                      ? Theme.of(
+                                          context,
+                                        ).colorScheme.onSecondaryContainer
+                                      : Theme.of(
+                                          context,
+                                        ).colorScheme.onSurface,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(height: 8),
               Text(
                 '仅保存在本机，用于「年份回顾」的 AI 总结；'
