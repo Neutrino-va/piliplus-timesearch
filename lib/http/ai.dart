@@ -283,11 +283,20 @@ Future<void> aiGenerateStream({
       data: {
         'model': e.model,
         'stream': true,
-        if (e.apiType == 'anthropic') 'max_tokens': 2048,
-        'messages': [
-          {'role': 'system', 'content': system},
-          {'role': 'user', 'content': prompt},
-        ],
+        // Anthropic 的 system 提示必须是顶层字段,messages 中只允许
+        // user/assistant 角色;OpenAI 兼容协议才在 messages 里放 system。
+        if (e.apiType == 'anthropic') ...{
+          'max_tokens': 2048,
+          'system': system,
+          'messages': [
+            {'role': 'user', 'content': prompt},
+          ],
+        } else ...{
+          'messages': [
+            {'role': 'system', 'content': system},
+            {'role': 'user', 'content': prompt},
+          ],
+        },
       },
     );
     final body = res.data;

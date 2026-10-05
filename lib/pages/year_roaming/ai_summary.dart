@@ -1,4 +1,7 @@
-import 'package:flutter/material.dart';
+// 注意:全应用统一使用 material_ui 分叉包(MaterialLocalizations 等类型
+// 与原生 flutter/material 不互通);这里若导入原生库,showDialog 会因
+// 查不到 MaterialLocalizations 而在 release 下空指针,表现为点击无反应。
+import 'package:material_ui/material_ui.dart';
 import 'package:dio/dio.dart';
 import 'package:PiliPlus/http/ai.dart';
 import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
