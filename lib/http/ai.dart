@@ -1,4 +1,5 @@
 import 'dart:io' show SocketException;
+import 'dart:convert';
 
 import 'package:PiliPlus/utils/storage_pref.dart';
 import 'package:dio/dio.dart';
@@ -48,9 +49,12 @@ class AiEndpoint {
   }
 
   Map<String, Object> get headers => {
+    // 双鉴权头并发:官方 Anthropic 认 x-api-key,多数中转网关认
+    // Authorization: Bearer;双方都会忽略自己不认识的那个。
     if (apiType == 'anthropic') ...{
       'x-api-key': apiKey,
       'anthropic-version': '2023-06-01',
+      'Authorization': 'Bearer $apiKey',
     } else ...{
       'Authorization': 'Bearer $apiKey',
     },
@@ -79,7 +83,7 @@ abstract final class AiService {
     if (!e.configured) {
       throw const AiConfigException();
     }
-    final dio = _buildDio();
+    final dio = AiService._buildDio();
     try {
       if (e.apiType == 'anthropic') {
         final res = await dio.post(
@@ -138,7 +142,7 @@ abstract final class AiService {
     if (e.baseUrl.isEmpty) {
       return (ok: false, latencyMs: null, error: '请先填写 Base URL');
     }
-    final dio = _buildDio();
+    final dio = AiService._buildDio();
     final watch = Stopwatch()..start();
     try {
       final res = await dio.get(
@@ -171,7 +175,7 @@ abstract final class AiService {
     if (e.baseUrl.isEmpty) {
       throw const AiServiceException('请先填写 Base URL');
     }
-    final dio = _buildDio();
+    final dio = AiService._buildDio();
     try {
       final res = await dio.get(
         e.modelsUrl,
@@ -245,3 +249,122 @@ class AiServiceException implements Exception {
   @override
   String toString() => message;
 }
+
+  /// 流式生成:SSE 逐段回调,实时显示生成(与思考)过程。
+  ///
+  /// - OpenAI 兼容:choices[0].delta.content 正文;
+  ///   delta.reasoning_content(DeepSeek 等推理模型)→ onReasoning;
+  /// - Anthropic:content_block_delta.delta.text 逐段追加;
+  /// - 兼容部分代理忽略 stream 返回整体 JSON 的情况(一次性输出);
+  /// - [cancelToken] 取消后请求中止并抛 Cancelled。
+Future<void> aiGenerateStream({
+    required String prompt,
+    required void Function(String fullText) onDelta,
+    void Function(String reasoningDelta)? onReasoning,
+    String system =
+        '你是B站(Bilibili)数据总结助手。根据用户提供的统计数据,'
+        '用轻松口语化的中文写一段不超过250字的总结,'
+        '突出内容风格、兴趣偏好与亮点,可适当分点,不要编造数据。',
+    AiEndpoint? endpoint,
+    CancelToken? cancelToken,
+  }) async {
+    final e = endpoint ?? AiEndpoint.fromPrefs();
+    if (!e.configured) {
+      throw const AiConfigException();
+    }
+    final dio = AiService._buildDio();
+    final res = await dio.post<ResponseBody>(
+      e.chatUrl,
+      options: Options(
+        headers: {...e.headers, 'content-type': 'application/json'},
+        responseType: ResponseType.stream,
+      ),
+      cancelToken: cancelToken,
+      data: {
+        'model': e.model,
+        'stream': true,
+        if (e.apiType == 'anthropic') 'max_tokens': 2048,
+        'messages': [
+          {'role': 'system', 'content': system},
+          {'role': 'user', 'content': prompt},
+        ],
+      },
+    );
+    final body = res.data;
+    if (body == null) throw const AiServiceException('响应为空');
+    final statusCode = res.statusCode ?? 0;
+    if (statusCode != 200) {
+      // 非 200:读完 body 解析错误信息
+      final text = await utf8.decoder
+          .bind(body.stream)
+          .fold('', (a, b) => a + b);
+      String message = AiService._statusText(statusCode);
+      try {
+        final json = jsonDecode(text);
+        message =
+            json['error']?['message']?.toString() ??
+            json['error']?['type']?.toString() ??
+            json['message']?.toString() ??
+            message;
+      } catch (_) {}
+      throw AiServiceException(message);
+    }
+
+    final buffer = StringBuffer();
+    final lineStream = body.stream
+        .cast<List<int>>()
+        .transform(utf8.decoder)
+        .transform(const LineSplitter());
+    await for (final rawLine in lineStream) {
+      if (cancelToken?.isCancelled ?? false) return;
+      if (!rawLine.startsWith('data:')) continue;
+      final payload = rawLine.substring(5).trim();
+      if (payload.isEmpty || payload == '[DONE]') continue;
+      try {
+        final json = jsonDecode(payload);
+        // OpenAI 兼容 chunk
+        final choices = json['choices'] as List?;
+        if (choices != null && choices.isNotEmpty) {
+          final delta = choices[0]['delta'];
+          if (delta is Map) {
+            final reasoning = delta['reasoning_content'];
+            if (reasoning is String && reasoning.isNotEmpty) {
+              onReasoning?.call(reasoning);
+            }
+            final content = delta['content'];
+            if (content is String && content.isNotEmpty) {
+              buffer.write(content);
+              onDelta(buffer.toString());
+            }
+            // 代理忽略 stream 返回整体 JSON 的情况
+            final full = delta['message']?['content'];
+            if (full is String && full.isNotEmpty && buffer.isEmpty) {
+              buffer.write(full);
+              onDelta(buffer.toString());
+            }
+          }
+          continue;
+        }
+        // Anthropic chunk
+        if (json['type'] == 'content_block_delta') {
+          final delta = json['delta'];
+          final thinking = delta?['thinking'];
+          if (thinking is String && thinking.isNotEmpty) {
+            onReasoning?.call(thinking);
+          }
+          final text = delta?['text'];
+          if (text is String && text.isNotEmpty) {
+            buffer.write(text);
+            onDelta(buffer.toString());
+          }
+        } else if (json['type'] == 'error') {
+          final message = json['error']?['message'];
+          throw AiServiceException(message?.toString() ?? '流式响应错误');
+        }
+      } catch (e) {
+        if (e is AiServiceException) rethrow;
+        // 单行解析失败跳过
+      }
+    }
+    if (buffer.isEmpty) throw const AiServiceException('未收到生成内容');
+  }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:dio/dio.dart';
 import 'package:PiliPlus/http/ai.dart';
 import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 
@@ -30,34 +31,83 @@ class _AiSummaryDialog extends StatefulWidget {
 }
 
 class _AiSummaryDialogState extends State<_AiSummaryDialog> {
-  String? _result;
+  final _cancelToken = CancelToken();
+  final _scrollController = ScrollController();
+
+  String _text = '';
+  String _reasoning = '';
   String? _error;
-  bool _loading = true;
+  bool _done = false;
 
   @override
   void initState() {
     super.initState();
-    _generate();
+    _start();
   }
 
-  Future<void> _generate() async {
+  @override
+  void dispose() {
+    if (!_done) _cancelToken.cancel();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _start() async {
     setState(() {
-      _loading = true;
+      _text = '';
+      _reasoning = '';
       _error = null;
-      _result = null;
+      _done = false;
     });
     try {
-      final text = await AiService.generate(prompt: widget.prompt);
-      if (mounted) setState(() => _result = text);
+      await aiGenerateStream(
+        prompt: widget.prompt,
+        cancelToken: _cancelToken,
+        onDelta: (full) {
+          if (mounted) {
+            setState(() => _text = full);
+            _autoScroll();
+          }
+        },
+        onReasoning: (piece) {
+          if (mounted) {
+            setState(() => _reasoning += piece);
+            _autoScroll();
+          }
+        },
+      );
+      if (mounted) setState(() => _done = true);
     } on AiConfigException {
       if (mounted) {
-        setState(
-          () => _error = '尚未配置 AI 接口，请到 设置→其它设置→AI 总结设置 填写',
-        );
+        setState(() {
+          _error = '尚未配置 AI 接口，请到 设置→其它设置→AI 总结设置 填写';
+          _done = true;
+        });
       }
     } on AiServiceException catch (e) {
-      if (mounted) setState(() => _error = e.message);
+      if (mounted) {
+        setState(() {
+          _error = e.message;
+          _done = true;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = '请求失败：$e';
+          _done = true;
+        });
+      }
     }
+    _autoScroll();
+  }
+
+  void _autoScroll() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+      }
+    });
   }
 
   @override
@@ -66,42 +116,106 @@ class _AiSummaryDialogState extends State<_AiSummaryDialog> {
     return AlertDialog(
       title: Text('AI 总结 · ${widget.title}'),
       content: SizedBox(
-        width: 420,
+        width: 440,
         child: SingleChildScrollView(
+          controller: _scrollController,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
-            spacing: 12,
+            spacing: 10,
             children: [
-              if (_loading)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 24),
-                  child: Center(child: CircularProgressIndicator()),
+              if (_reasoning.isNotEmpty)
+                Theme(
+                  data: theme.copyWith(dividerColor: Colors.transparent),
+                  child: ExpansionTile(
+                    tilePadding: EdgeInsets.zero,
+                    initiallyExpanded: _text.isEmpty,
+                    iconColor: theme.colorScheme.outline,
+                    collapsedIconColor: theme.colorScheme.outline,
+                    title: Text(
+                      '思考过程',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: theme.colorScheme.outline,
+                      ),
+                    ),
+                    children: [
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: SelectableText(
+                          _reasoning,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: theme.colorScheme.outline,
+                            height: 1.4,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              if (_text.isNotEmpty)
+                SelectableText(
+                  _text,
+                  style: const TextStyle(fontSize: 14, height: 1.5),
                 )
               else if (_error != null)
                 Text(
                   _error!,
-                  style: TextStyle(color: theme.colorScheme.error),
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: theme.colorScheme.error,
+                  ),
+                )
+              else if (_done)
+                Text(
+                  '未收到生成内容',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: theme.colorScheme.outline,
+                  ),
                 )
               else
-                SelectableText(
-                  _result ?? '',
-                  style: const TextStyle(fontSize: 14, height: 1.5),
+                Row(
+                  spacing: 10,
+                  children: [
+                    const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    Text(
+                      '正在连接模型…',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: theme.colorScheme.outline,
+                      ),
+                    ),
+                  ],
                 ),
-              Text(
-                '该总结由 AI 生成，可能存在偏差；统计数据将发送至你配置的接口。',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: theme.colorScheme.outline,
+              if (_done && _error == null && _text.isNotEmpty)
+                Text(
+                  '该总结由 AI 生成，可能存在偏差；统计数据已发送至你配置的接口。',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: theme.colorScheme.outline,
+                  ),
                 ),
-              ),
             ],
           ),
         ),
       ),
       actions: [
-        if (!_loading && _result != null)
-          TextButton(onPressed: _generate, child: const Text('重新生成')),
+        if (!_done && _error == null)
+          TextButton(
+            onPressed: () {
+              _cancelToken.cancel();
+              Navigator.of(context).pop();
+            },
+            child: const Text('停止生成'),
+          )
+        else
+          TextButton(onPressed: _start, child: const Text('重新生成')),
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('关闭'),
