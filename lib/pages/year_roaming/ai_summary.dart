@@ -1,6 +1,8 @@
 // 注意:全应用统一使用 material_ui 分叉包(MaterialLocalizations 等类型
 // 与原生 flutter/material 不互通);这里若导入原生库,showDialog 会因
 // 查不到 MaterialLocalizations 而在 release 下空指针,表现为点击无反应。
+import 'dart:async';
+
 import 'package:material_ui/material_ui.dart';
 import 'package:dio/dio.dart';
 import 'package:PiliPlus/http/ai.dart';
@@ -33,14 +35,53 @@ class _AiSummaryDialog extends StatefulWidget {
   State<_AiSummaryDialog> createState() => _AiSummaryDialogState();
 }
 
+/// 生成阶段:连接中 → 思考中(收到 reasoning)→ 落笔中(收到正文)。
+enum _GenPhase { connecting, thinking, writing }
+
 class _AiSummaryDialogState extends State<_AiSummaryDialog> {
   final _cancelToken = CancelToken();
   final _scrollController = ScrollController();
 
+  _GenPhase _phase = _GenPhase.connecting;
   String _text = '';
-  String _reasoning = '';
   String? _error;
   bool _done = false;
+
+  /// 进度条幽默字幕,每 2.2 秒轮换一条;思考内容不展示,仅按阶段换词。
+  Timer? _captionTimer;
+  int _captionIndex = 0;
+
+  static const _captions = <_GenPhase, List<String>>{
+    _GenPhase.connecting: [
+      '正在敲开模型的大门…',
+      '正在与 AI 服务器握手…',
+      '拨号上网中,请稍候…',
+    ],
+    _GenPhase.thinking: [
+      '正在玩命思考…',
+      '脑细胞火力全开中…',
+      '翻箱倒柜翻你的回忆…',
+      '让子弹再飞一会儿…',
+      '正在脑子里开小会…',
+    ],
+    _GenPhase.writing: [
+      '正在奋笔疾书…',
+      '马上就好,憋个大招…',
+      '字都排着队往外蹦…',
+    ],
+  };
+
+  String get _caption {
+    final pool = _captions[_phase]!;
+    return pool[_captionIndex % pool.length];
+  }
+
+  void _startCaptionTimer() {
+    _captionTimer?.cancel();
+    _captionTimer = Timer.periodic(const Duration(milliseconds: 2200), (_) {
+      if (mounted) setState(() => _captionIndex++);
+    });
+  }
 
   @override
   void initState() {
@@ -50,6 +91,7 @@ class _AiSummaryDialogState extends State<_AiSummaryDialog> {
 
   @override
   void dispose() {
+    _captionTimer?.cancel();
     if (!_done) _cancelToken.cancel();
     _scrollController.dispose();
     super.dispose();
@@ -57,25 +99,30 @@ class _AiSummaryDialogState extends State<_AiSummaryDialog> {
 
   Future<void> _start() async {
     setState(() {
+      _phase = _GenPhase.connecting;
       _text = '';
-      _reasoning = '';
       _error = null;
       _done = false;
+      _captionIndex = 0;
     });
+    _startCaptionTimer();
     try {
       await aiGenerateStream(
         prompt: widget.prompt,
         cancelToken: _cancelToken,
         onDelta: (full) {
           if (mounted) {
-            setState(() => _text = full);
+            setState(() {
+              _phase = _GenPhase.writing;
+              _text = full;
+            });
             _autoScroll();
           }
         },
-        onReasoning: (piece) {
-          if (mounted) {
-            setState(() => _reasoning += piece);
-            _autoScroll();
+        // 思考过程不逐字展示,只用来把字幕切到「思考中」阶段
+        onReasoning: (_) {
+          if (mounted && _phase == _GenPhase.connecting) {
+            setState(() => _phase = _GenPhase.thinking);
           }
         },
       );
@@ -102,6 +149,7 @@ class _AiSummaryDialogState extends State<_AiSummaryDialog> {
         });
       }
     }
+    _captionTimer?.cancel();
     _autoScroll();
   }
 
@@ -127,36 +175,6 @@ class _AiSummaryDialogState extends State<_AiSummaryDialog> {
             crossAxisAlignment: CrossAxisAlignment.start,
             spacing: 10,
             children: [
-              if (_reasoning.isNotEmpty)
-                Theme(
-                  data: theme.copyWith(dividerColor: Colors.transparent),
-                  child: ExpansionTile(
-                    tilePadding: EdgeInsets.zero,
-                    initiallyExpanded: _text.isEmpty,
-                    iconColor: theme.colorScheme.outline,
-                    collapsedIconColor: theme.colorScheme.outline,
-                    title: Text(
-                      '思考过程',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: theme.colorScheme.outline,
-                      ),
-                    ),
-                    children: [
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: SelectableText(
-                          _reasoning,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: theme.colorScheme.outline,
-                            height: 1.4,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
               if (_text.isNotEmpty)
                 SelectableText(
                   _text,
@@ -179,23 +197,7 @@ class _AiSummaryDialogState extends State<_AiSummaryDialog> {
                   ),
                 )
               else
-                Row(
-                  spacing: 10,
-                  children: [
-                    const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                    Text(
-                      '正在连接模型…',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: theme.colorScheme.outline,
-                      ),
-                    ),
-                  ],
-                ),
+                _buildProgress(theme),
               if (_done && _error == null && _text.isNotEmpty)
                 Text(
                   '该总结由 AI 生成，可能存在偏差；统计数据已发送至你配置的接口。',
@@ -222,6 +224,25 @@ class _AiSummaryDialogState extends State<_AiSummaryDialog> {
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('关闭'),
+        ),
+      ],
+    );
+  }
+
+  /// 加载态:不确定进度条 + 阶段化幽默字幕(不展示思考细节)。
+  Widget _buildProgress(ThemeData theme) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      spacing: 10,
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(6),
+          child: const LinearProgressIndicator(minHeight: 6),
+        ),
+        Text(
+          _caption,
+          style: TextStyle(fontSize: 12, color: theme.colorScheme.outline),
         ),
       ],
     );

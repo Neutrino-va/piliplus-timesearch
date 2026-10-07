@@ -52,6 +52,7 @@ import 'package:PiliPlus/pages/popular_series/view.dart';
 import 'package:PiliPlus/pages/search/view.dart';
 import 'package:PiliPlus/pages/search_result/view.dart';
 import 'package:PiliPlus/pages/search_trending/view.dart';
+import 'package:PiliPlus/pages/setting/pages/ai_assistant.dart';
 import 'package:PiliPlus/pages/setting/pages/bar_set.dart';
 import 'package:PiliPlus/pages/setting/pages/color_select.dart';
 import 'package:PiliPlus/pages/setting/pages/display_mode.dart';
@@ -127,6 +128,8 @@ class Routes {
     GetPage(name: '/followSearch', page: () => const FollowSearchPage()),
     // 年份漫游 / 年度回顾
     GetPage(name: '/yearRoaming', page: () => const YearRoamingPage()),
+    // AI 设置助手
+    GetPage(name: '/aiAssistant', page: () => const AiAssistantPage()),
     // 消息页面
     GetPage(name: '/whisper', page: () => const WhisperPage()),
     // 私信详情

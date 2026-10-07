@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:PiliPlus/common/style.dart';
 import 'package:PiliPlus/common/widgets/badge.dart';
+import 'package:PiliPlus/common/widgets/dialog/dialog.dart';
 import 'package:PiliPlus/common/widgets/image/network_img_layer.dart';
 import 'package:PiliPlus/common/widgets/loading_widget/http_error.dart';
 import 'package:PiliPlus/common/widgets/progress_bar/video_progress_indicator.dart';
@@ -11,6 +12,7 @@ import 'package:PiliPlus/http/search.dart';
 import 'package:PiliPlus/models/common/badge_type.dart';
 import 'package:PiliPlus/models_new/history/list.dart';
 import 'package:PiliPlus/models_new/video/video_detail/dimension.dart';
+import 'package:PiliPlus/pages/main/controller.dart';
 import 'package:PiliPlus/pages/search/widgets/search_text.dart';
 import 'package:PiliPlus/pages/year_recall/controller.dart';
 import 'package:PiliPlus/pages/year_recall/feed_controller.dart';
@@ -27,6 +29,9 @@ import 'package:PiliPlus/utils/duration_utils.dart';
 import 'package:PiliPlus/utils/extension/get_ext.dart';
 import 'package:PiliPlus/utils/id_utils.dart';
 import 'package:PiliPlus/utils/page_utils.dart';
+import 'package:PiliPlus/utils/storage.dart';
+import 'package:PiliPlus/utils/storage_key.dart';
+import 'package:PiliPlus/utils/storage_pref.dart';
 import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 import 'package:get/get.dart';
 import 'package:material_ui/material_ui.dart';
@@ -39,12 +44,28 @@ class YearRoamingPage extends StatefulWidget {
 }
 
 class _YearRoamingPageState extends State<YearRoamingPage>
-    with AutomaticKeepAliveClientMixin {
+    with AutomaticKeepAliveClientMixin, SingleTickerProviderStateMixin {
   final _controller = Get.putOrFind(YearRoamingController.new);
   // 页面自持滚动控制器：底部 tab 与独立路由两个入口共享同一个
   // YearRoamingController，不能再共用其 scrollController（存在双 attach
   // 与 GetX 回收后 dispose 复用的风险）。
   final ScrollController _scrollController = ScrollController();
+
+  /// 顶部模式 TabBar:pageMode 是唯一事实来源,TabController 仅作交互
+  /// 入口(点 tab → _setPageMode;不存在反向驱动的场景)。
+  late final TabController _tabController = TabController(
+    length: 4,
+    vsync: this,
+    initialIndex: _controller.pageMode.value,
+  )..addListener(_onTabChanged);
+
+  void _onTabChanged() {
+    // 动画开始的回调(indexIsChanging=true)跳过,结束时才是最终选中项
+    if (_tabController.indexIsChanging) return;
+    if (_tabController.index != _controller.pageMode.value) {
+      _setPageMode(_tabController.index);
+    }
+  }
 
   /// 「年份回顾」控制器懒创建：首次切到该模式时才实例化并发起请求。
   YearRecallController? _recallController;
@@ -154,6 +175,7 @@ class _YearRoamingPageState extends State<YearRoamingPage>
 
   @override
   void dispose() {
+    _tabController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -168,10 +190,26 @@ class _YearRoamingPageState extends State<YearRoamingPage>
       () {
         final theme = Theme.of(context);
         final state = _controller.loadingState.value;
+        final main = Get.isRegistered<MainController>()
+            ? Get.find<MainController>()
+            : null;
+        // 功能总开关关闭:整页降级为停用提示(读 RxBool,重新开启即恢复)
+        if (!(main?.yearRoamingEnabled.value ?? Pref.yearRoamingEnabled)) {
+          return SimpleScaffold(
+            appBar: AppBar(title: const Text('年份漫游')),
+            body: _buildDisabledPage(theme),
+          );
+        }
         return SimpleScaffold(
           appBar: AppBar(
             title: const Text('年份漫游'),
             actions: [
+              if (_controller.pageMode.value == 0) _buildSectionMenu(),
+              IconButton(
+                tooltip: '关闭回顾功能',
+                onPressed: _disableYearRoaming,
+                icon: const Icon(Icons.power_settings_new),
+              ),
               IconButton(
                 tooltip: '刷新年度数据',
                 onPressed: _controller.onRefresh,
@@ -179,12 +217,28 @@ class _YearRoamingPageState extends State<YearRoamingPage>
               ),
               const SizedBox(width: 6),
             ],
+            bottom: TabBar(
+              controller: _tabController,
+              labelStyle: const TextStyle(fontSize: 12),
+              unselectedLabelStyle: const TextStyle(fontSize: 12),
+              tabs: const [
+                Tab(
+                  text: '我的回顾',
+                  icon: Icon(Icons.person_outline, size: 18),
+                ),
+                Tab(text: '考古推荐', icon: Icon(Icons.movie_outlined, size: 18)),
+                Tab(text: '收藏回顾', icon: Icon(Icons.star_outline, size: 18)),
+                Tab(
+                  text: '关注回顾',
+                  icon: Icon(Icons.person_add_alt_outlined, size: 18),
+                ),
+              ],
+            ),
           ),
           body: CustomScrollView(
             controller: _scrollController,
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: [
-              SliverToBoxAdapter(child: _buildModeSwitch(theme)),
               if (_controller.pageMode.value == 3)
                 ...switch (_follow) {
                   final followController? => FollowRecallView(
@@ -245,29 +299,6 @@ class _YearRoamingPageState extends State<YearRoamingPage>
           ),
         );
       },
-    );
-  }
-
-  /// 顶部模式切换：「我的回顾」/「年份回顾」/「收藏回顾」。
-  Widget _buildModeSwitch(ThemeData theme) {
-    final mode = _controller.pageMode.value;
-    Widget chip(String text, int value) => SearchText(
-      text: text,
-      bgColor: mode == value ? theme.colorScheme.secondaryContainer : null,
-      textColor: mode == value ? theme.colorScheme.onSecondaryContainer : null,
-      onTap: (_) => _setPageMode(value),
-    );
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
-      child: Row(
-        spacing: 8,
-        children: [
-          chip('我的回顾', 0),
-          chip('年份回顾', 1),
-          chip('收藏回顾', 2),
-          chip('关注回顾', 3),
-        ],
-      ),
     );
   }
 
@@ -799,12 +830,8 @@ class _YearRoamingPageState extends State<YearRoamingPage>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          KeyedSubtree(
-            key: _summaryKey,
-            child: _buildDirectoryCard(theme, records.length),
-          ),
-          const SizedBox(height: 10),
           Container(
+            key: _summaryKey,
             width: double.infinity,
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -1007,76 +1034,93 @@ class _YearRoamingPageState extends State<YearRoamingPage>
     return map;
   }
 
-  /// 功能目录卡(二级菜单):点击滚动定位到对应板块。
-  Widget _buildDirectoryCard(ThemeData theme, int recordCount) {
-    final colorScheme = theme.colorScheme;
-    final entries = [
-      (Icons.emoji_events_outlined, '概览总结', _summaryKey),
-      (Icons.local_fire_department_outlined, '活跃热力图', _heatmapKey),
-      (Icons.donut_large_outlined, '分区统计', _zoneKey),
-      (Icons.cloud_outlined, '偏好词云', _cloudKey),
-      (Icons.thumb_up_alt_outlined, '获赞排行', _likesKey),
-      (Icons.video_library_outlined, '观看列表', _listHeaderKey),
-    ];
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.45),
-        borderRadius: Style.mdRadius,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        spacing: 10,
-        children: [
-          Row(
-            children: [
-              Text(
-                '功能目录',
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const Spacer(),
-              Text(
-                '点击直达 · 基于 $recordCount 条记录',
-                style: TextStyle(fontSize: 11, color: colorScheme.outline),
-              ),
-            ],
+  /// 「我的回顾」板块锚点(AppBar「板块直达」菜单用,替代原页内功能目录卡)。
+  List<(IconData, String, GlobalKey)> get _sectionEntries => [
+    (Icons.emoji_events_outlined, '概览总结', _summaryKey),
+    (Icons.local_fire_department_outlined, '活跃热力图', _heatmapKey),
+    (Icons.donut_large_outlined, '分区统计', _zoneKey),
+    (Icons.cloud_outlined, '偏好词云', _cloudKey),
+    (Icons.thumb_up_alt_outlined, '获赞排行', _likesKey),
+    (Icons.video_library_outlined, '观看列表', _listHeaderKey),
+  ];
+
+  /// AppBar「板块直达」下拉菜单:滚动定位到对应板块。
+  Widget _buildSectionMenu() {
+    return PopupMenuButton<int>(
+      tooltip: '板块直达',
+      icon: const Icon(Icons.menu_open),
+      onSelected: (index) => _scrollToSection(_sectionEntries[index].$3),
+      itemBuilder: (context) => [
+        for (var i = 0; i < _sectionEntries.length; i++)
+          PopupMenuItem(
+            value: i,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              spacing: 10,
+              children: [
+                Icon(_sectionEntries[i].$1, size: 18),
+                Text(_sectionEntries[i].$2),
+              ],
+            ),
           ),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              for (final entry in entries)
-                GestureDetector(
-                  onTap: () => _scrollToSection(entry.$3),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 7,
-                    ),
-                    decoration: BoxDecoration(
-                      color: colorScheme.onSurface.withValues(alpha: 0.06),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      spacing: 6,
-                      children: [
-                        Icon(entry.$1, size: 15, color: colorScheme.primary),
-                        Text(
-                          entry.$2,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: colorScheme.onSurface,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-            ],
+      ],
+    );
+  }
+
+  /// 关闭整个年份回顾功能:确认后写盘并同步全局开关,跳出回顾页
+  /// (底部 tab → 跳回首页;独立路由 → 返回)。底部 tab 的移除在
+  /// 重启后的 setNavBarConfig 里完成,避免运行时增减 PageView 页签。
+  Future<void> _disableYearRoaming() async {
+    final ok = await showConfirmDialog(
+      context: context,
+      title: const Text('关闭年份回顾?'),
+      content: const Text(
+        '关闭后所有入口立即隐藏、回顾数据停止加载,降低耗电;'
+        '本地归档会保留,可在 设置→其它设置 或本页重新开启。',
+      ),
+    );
+    if (!ok || !mounted) return;
+    await GStorage.setting.put(SettingBoxKey.yearRoamingEnabled, false);
+    final main = Get.isRegistered<MainController>()
+        ? Get.find<MainController>()
+        : null;
+    main?.yearRoamingEnabled.value = false;
+    if (Get.currentRoute == '/yearRoaming') {
+      Get.back<void>();
+    } else {
+      main?.setIndex(0);
+    }
+    SmartDialog.showToast('已关闭,重启应用后移除底部入口');
+  }
+
+  /// 从停用页重新开启(控制器与归档数据均保留,即时恢复)。
+  Future<void> _enableYearRoaming() async {
+    await GStorage.setting.put(SettingBoxKey.yearRoamingEnabled, true);
+    if (Get.isRegistered<MainController>()) {
+      Get.find<MainController>().yearRoamingEnabled.value = true;
+    }
+    SmartDialog.showToast('已开启,重启应用后恢复底部入口');
+  }
+
+  /// 功能关闭时的整页降级提示。
+  Widget _buildDisabledPage(ThemeData theme) {
+    final colorScheme = theme.colorScheme;
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.power_off_outlined, size: 56, color: colorScheme.outline),
+          const SizedBox(height: 12),
+          Text('年份回顾功能已关闭', style: theme.textTheme.titleMedium),
+          const SizedBox(height: 6),
+          Text(
+            '入口已隐藏、数据加载已停止;本地归档已保留。',
+            style: TextStyle(fontSize: 12, color: colorScheme.outline),
+          ),
+          const SizedBox(height: 16),
+          FilledButton.tonal(
+            onPressed: _enableYearRoaming,
+            child: const Text('重新开启'),
           ),
         ],
       ),

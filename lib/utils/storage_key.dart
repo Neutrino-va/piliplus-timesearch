@@ -187,6 +187,9 @@ abstract final class SettingBoxKey {
       aiApiKey = 'aiApiKey',
       aiModel = 'aiModel';
 
+  // 年份回顾功能总开关(关闭后隐藏入口并停止回顾数据加载,降低能耗)
+  static const String yearRoamingEnabled = 'yearRoamingEnabled';
+
   static const String enableSponsorBlock = 'enableSponsorBlock',
       blockSettings = 'blockSettings',
       blockLimit = 'blockLimit',

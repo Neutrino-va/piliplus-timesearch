@@ -40,6 +40,10 @@ class MainController extends GetxController
   late dynamic controller;
   final RxInt selectedIndex = 0.obs;
 
+  /// 年份回顾功能总开关(设置/回顾页可关;关闭后首页入口即时隐藏,
+  /// 底部 tab 在下次 setNavBarConfig(重启)时移除)
+  final RxBool yearRoamingEnabled = Pref.yearRoamingEnabled.obs;
+
   final RxInt dynCount = 0.obs;
   late DynamicBadgeMode dynamicBadgeMode;
   late bool checkDynamic = Pref.checkDynamic;
@@ -250,7 +254,8 @@ class MainController extends GetxController
             true;
         if (!migrationDone) {
           final yearRoamingIndex = NavigationBarType.yearRoaming.index;
-          if (!indices.contains(yearRoamingIndex)) {
+          if (!indices.contains(yearRoamingIndex) &&
+              Pref.yearRoamingEnabled) {
             indices.add(yearRoamingIndex);
             GStorage.setting.put(SettingBoxKey.navBarSort, indices);
           }
@@ -258,6 +263,10 @@ class MainController extends GetxController
             SettingBoxKey.navBarSortMigrationV1,
             true,
           );
+        }
+        // 回顾功能总开关关闭时移除底部入口(重启后生效)
+        if (!Pref.yearRoamingEnabled) {
+          indices.remove(NavigationBarType.yearRoaming.index);
         }
         navigationBars = indices.map((index) => allBars[index]).toList();
       }

@@ -301,6 +301,10 @@ abstract final class Pref {
   static String get aiModel =>
       _setting.get(SettingBoxKey.aiModel, defaultValue: '');
 
+  // 年份回顾功能总开关(默认开启)
+  static bool get yearRoamingEnabled =>
+      _setting.get(SettingBoxKey.yearRoamingEnabled, defaultValue: true);
+
   static String get banWordForZone =>
       _setting.get(SettingBoxKey.banWordForZone, defaultValue: '');
 
